@@ -1,113 +1,336 @@
-import Image from "next/image";
+"use client";
+import React, { useEffect, useRef, useState } from "react";
+import { firestore, firebase } from "./firebaseConfig";
 
-export default function Home() {
+type OfferAnswerPair = {
+  offer: {
+    sdp: string | null;
+    type: RTCSdpType;
+  } | null;
+  answer: {
+    sdp: string | null;
+    type: RTCSdpType;
+  } | null;
+};
+
+const Home = () => {
+  const webcamButtonRef = useRef<HTMLButtonElement>(null);
+  const callButtonRef = useRef<HTMLButtonElement>(null);
+  const callInputRef = useRef<HTMLInputElement>(null);
+  const answerButtonRef = useRef<HTMLButtonElement>(null);
+  const hangupButtonRef = useRef<HTMLButtonElement>(null);
+  const webcamVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [pcConns, setpcConns] = useState<RTCPeerConnection[]>([]);
+
+  let localStream: MediaStream | null = null;
+  let remoteStream: MediaStream | null = null;
+
+  useEffect(() => {
+    const servers = {
+      iceServers: [
+        {
+          urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
+        },
+      ],
+      iceCandidatePoolSize: 10,
+    };
+    let pc = new RTCPeerConnection(servers);
+
+    const startWebcam = async () => {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        remoteStream = new MediaStream();
+
+        if (webcamVideoRef.current && localStream) {
+          webcamVideoRef.current.srcObject = localStream;
+          localStream.getTracks().forEach((track) => {
+            pc.addTrack(track, localStream as MediaStream);
+          });
+        }
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+      }
+
+      pc.ontrack = (event) => {
+        event.streams[0].getTracks().forEach((track) => {
+          if (remoteStream) {
+            remoteStream.addTrack(track);
+          }
+        });
+
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+      };
+
+      if (callButtonRef.current) callButtonRef.current.disabled = false;
+      if (answerButtonRef.current) answerButtonRef.current.disabled = false;
+      if (webcamButtonRef.current) webcamButtonRef.current.disabled = true;
+    };
+
+    if (webcamButtonRef.current) {
+      webcamButtonRef.current.onclick = startWebcam;
+    }
+
+    const handleCallButtonClick = async () => {
+      const callDoc = firestore.collection("calls").doc();
+      const signalDoc = callDoc.collection("signal").doc(`signal`);
+      if (callInputRef.current) {
+        callInputRef.current.value = callDoc.id;
+      }
+      await callDoc.set({ loading: false });
+      await signalDoc.set({ signal: 0 });
+      await callDoc.update({ loading: true });
+
+      const offerCandidatesCollection = callDoc.collection("candidates").doc(`candidate1`).collection("offerCandidates");
+      const answerCandidatesCollection = callDoc.collection("candidates").doc(`candidate1`).collection("answerCandidates");
+      pc.onicecandidate = (event) => {
+        event.candidate && offerCandidatesCollection.add(event.candidate.toJSON());
+      };
+
+      //Set Local Offer Description:
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
+
+      const offer = {
+        sdp: offerDescription.sdp as string,
+        type: offerDescription.type,
+      };
+
+      let offerAnswerPair: OfferAnswerPair = {
+        offer: offer,
+        answer: null,
+      };
+
+      // Get the current array of offerAnswerPair from the callDoc
+      const currentPairs: OfferAnswerPair[] = (await callDoc.get()).data()?.offerAnswerPairs || [];
+
+      // Push the new offerAnswerPair into the array
+      await currentPairs.push(offerAnswerPair);
+
+      // Update the offerAnswerPairs field in the callDoc
+      await callDoc.update({ offerAnswerPairs: currentPairs });
+      await signalDoc.set({ signal: 1 });
+
+      await callDoc.update({ loading: false });
+
+      //Here step 1 completes
+
+      const handleSignalChange = async (signal: number) => {
+        if (signal === 2) {
+          console.log("inside signal 2");
+          await callDoc.update({ loading: true });
+
+          const currentConnectedUsers = (await callDoc.get()).data()?.offerAnswerPairs;
+          const lengthUsers = currentConnectedUsers.length;
+          const answerDescription = new RTCSessionDescription((await callDoc.get()).data()?.offerAnswerPairs[lengthUsers - 1].answer);
+
+          pc.setRemoteDescription(answerDescription);
+
+          console.log(pc);
+          await callDoc.update({ loading: false });
+
+          answerCandidatesCollection.onSnapshot(
+            (snapshot) => {
+              snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                  const candidateData = change.doc.data();
+                  const candidate = new RTCIceCandidate(candidateData);
+                  // console.log(candidateData)
+                  pc.addIceCandidate(candidate)
+                    .then(() => {
+                      console.log("Ice candidate added successfully");
+                    })
+                    .catch((error) => {
+                      console.error("Error adding ice candidate:", error);
+                    });
+                }
+              });
+            },
+            (error) => {
+              console.error("Error getting candidate collection:", error);
+            }
+          );
+          await signalDoc.update({ signal: 3 });
+        } else if (signal === 4) {
+          await signalDoc.update({ signal: 0 });
+        }
+
+        // const newPcConns = [...pcConns, pc];
+        // setpcConns(newPcConns);
+      };
+
+      signalDoc.onSnapshot(
+        async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const signal = data?.signal;
+            console.log("Signal changed to ", signal);
+            handleSignalChange(signal);
+          }
+        },
+        (error) => {
+          console.error("Error listening to document:", error);
+        }
+      );
+    };
+
+    const handleAnswerButtonClick = async () => {
+      let callId;
+      if (callInputRef.current) {
+        callId = callInputRef.current.value;
+      }
+      const callDocHost = firestore.collection("calls").doc(callId);
+      const myDoc = firestore.collection("calls").doc();
+      const signalDoc = callDocHost.collection("signal").doc(`signal`);
+      const offerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate1`).collection("offerCandidates");
+
+      signalDoc.onSnapshot(
+        async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const signal = data?.signal;
+            let lengthUsers;
+            if (signal === 1) {
+              console.log("Signal is 1");
+              const currentConnectedUsers = (await callDocHost.get()).data()?.offerAnswerPairs;
+              lengthUsers = currentConnectedUsers.length;
+              console.log("Currently connected users are ", lengthUsers);
+              //Creating new pc and setting its answer
+
+              const answerCandidatesColletion = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
+              if (pc)
+                pc.onicecandidate = (event) => {
+                  event.candidate && answerCandidatesColletion.add(event.candidate.toJSON());
+                };
+
+              console.log((await callDocHost.get()).data()?.offerAnswerPairs[lengthUsers - 1].offer);
+
+              const offerDescription = new RTCSessionDescription((await callDocHost.get()).data()?.offerAnswerPairs[lengthUsers - 1].offer);
+              await pc.setRemoteDescription(offerDescription);
+              console.log(pc);
+
+              const answerDescription = await pc.createAnswer();
+              await pc.setLocalDescription(answerDescription);
+
+              const answer = {
+                sdp: answerDescription.sdp,
+                type: answerDescription.type,
+              };
+
+              currentConnectedUsers[lengthUsers - 1].answer = answer;
+
+              // Update the document with the modified offerAnswerPairs array
+              await callDocHost.update({ offerAnswerPairs: currentConnectedUsers });
+
+              // set signal to 2
+              await signalDoc.update({ signal: 2 });
+            }
+
+            if (signal === 3) {
+              console.log("Signal is now 3");
+
+              // Fetch existing offerCandidates documents
+              offerCandidatesCollection
+                .get()
+                .then((querySnapshot) => {
+                  querySnapshot.forEach((doc) => {
+                    const candidateData = doc.data();
+                    const candidate = new RTCIceCandidate(candidateData);
+                    pc.addIceCandidate(candidate)
+                      .then(() => {
+                        console.log("Ice candidate added successfully");
+                      })
+                      .catch((error) => {
+                        console.error("Error adding ice candidate:", error);
+                      });
+                  });
+                })
+                .catch((error) => {
+                  console.error("Error getting existing offerCandidates:", error);
+                });
+
+              // Listen for real-time changes in offerCandidates collection
+              offerCandidatesCollection.onSnapshot(
+                (snapshot) => {
+                  snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                      const candidateData = change.doc.data();
+                      const candidate = new RTCIceCandidate(candidateData);
+                      pc.addIceCandidate(candidate)
+                        .then(() => {
+                          console.log("Ice candidate added successfully");
+                        })
+                        .catch((error) => {
+                          console.error("Error adding ice candidate:", error);
+                        });
+                    }
+                  });
+                },
+                (error) => {
+                  console.error("Error listening for offerCandidates changes:", error);
+                }
+              );
+            }
+          }
+        },
+        (error) => {
+          console.error("Error listening to document:", error);
+        }
+      );
+
+      await callDocHost.update({ loading: false });
+
+      if (answerButtonRef.current) answerButtonRef.current.disabled = true;
+    };
+
+    if (callButtonRef.current) {
+      callButtonRef.current.onclick = handleCallButtonClick;
+    }
+    if (answerButtonRef.current) {
+      answerButtonRef.current.onclick = handleAnswerButtonClick;
+    }
+  }, []);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
+    <div>
+      <h2>1. Start your Webcam</h2>
+      <div className="videos">
+        <span>
+          <h3>Local Stream</h3>
+          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline></video>
+        </span>
+        <span>
+          <h3>Remote Stream</h3>
+          <video id="remoteVideo" ref={remoteVideoRef} autoPlay playsInline></video>
+        </span>
       </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      <button ref={webcamButtonRef}>Start webcam</button>
+      <h2>2. Create a new Call</h2>
+      <button ref={callButtonRef} disabled>
+        Create Call (offer)
+      </button>
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+      <h2>3. Join a Call</h2>
+      <p>Answer the call from a different browser window or device</p>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+      <input ref={callInputRef} />
+      <button ref={answerButtonRef} disabled>
+        Answer
+      </button>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
+      <h2>4. Hangup</h2>
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+      <button ref={hangupButtonRef} disabled>
+        Hangup
+      </button>
+    </div>
   );
-}
+};
+
+export default Home;
