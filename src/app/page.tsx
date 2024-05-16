@@ -35,7 +35,6 @@ const Home = () => {
       ],
       iceCandidatePoolSize: 10,
     };
-    let pc = new RTCPeerConnection(servers);
 
     const startWebcam = async () => {
       try {
@@ -47,25 +46,13 @@ const Home = () => {
 
         if (webcamVideoRef.current && localStream) {
           webcamVideoRef.current.srcObject = localStream;
-          localStream.getTracks().forEach((track) => {
-            pc.addTrack(track, localStream as MediaStream);
-          });
+          
         }
       } catch (error) {
         console.error("Error accessing webcam:", error);
       }
 
-      pc.ontrack = (event) => {
-        event.streams[0].getTracks().forEach((track) => {
-          if (remoteStream) {
-            remoteStream.addTrack(track);
-          }
-        });
-
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-      };
+      
 
       if (callButtonRef.current) callButtonRef.current.disabled = false;
       if (answerButtonRef.current) answerButtonRef.current.disabled = false;
@@ -77,56 +64,88 @@ const Home = () => {
     }
 
     const handleCallButtonClick = async () => {
+      
       const callDoc = firestore.collection("calls").doc();
-      const signalDoc = callDoc.collection("signal").doc(`signal`);
+      let signalDoc = callDoc.collection("signal").doc(`signal1`);
       if (callInputRef.current) {
         callInputRef.current.value = callDoc.id;
       }
       await callDoc.set({ loading: false });
+      await callDoc.set({ connectedUsers: 1 });
+
+      let lengthUsers: number;
+      let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+      let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+
       await signalDoc.set({ signal: 0 });
-      await callDoc.update({ loading: true });
-
-      const offerCandidatesCollection = callDoc.collection("candidates").doc(`candidate1`).collection("offerCandidates");
-      const answerCandidatesCollection = callDoc.collection("candidates").doc(`candidate1`).collection("answerCandidates");
-      pc.onicecandidate = (event) => {
-        event.candidate && offerCandidatesCollection.add(event.candidate.toJSON());
-      };
-
-      //Set Local Offer Description:
-      const offerDescription = await pc.createOffer();
-      await pc.setLocalDescription(offerDescription);
-
-      const offer = {
-        sdp: offerDescription.sdp as string,
-        type: offerDescription.type,
-      };
-
-      let offerAnswerPair: OfferAnswerPair = {
-        offer: offer,
-        answer: null,
-      };
-
-      // Get the current array of offerAnswerPair from the callDoc
-      const currentPairs: OfferAnswerPair[] = (await callDoc.get()).data()?.offerAnswerPairs || [];
-
-      // Push the new offerAnswerPair into the array
-      await currentPairs.push(offerAnswerPair);
-
-      // Update the offerAnswerPairs field in the callDoc
-      await callDoc.update({ offerAnswerPairs: currentPairs });
-      await signalDoc.set({ signal: 1 });
-
-      await callDoc.update({ loading: false });
-
-      //Here step 1 completes
-
+      let pc : RTCPeerConnection;
       const handleSignalChange = async (signal: number) => {
+        if (signal === 0) {
+          pc = new RTCPeerConnection(servers);
+
+
+          localStream?.getTracks().forEach((track) => {
+            pc.addTrack(track, localStream as MediaStream);
+          });
+
+
+          pc.ontrack = (event) => {
+            event.streams[0].getTracks().forEach((track) => {
+              if (remoteStream) {
+                remoteStream.addTrack(track);
+              }
+            });
+    
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStream;
+            }
+          };
+
+
+
+          lengthUsers = (await callDoc.get()).data()?.connectedUsers;
+          console.log(lengthUsers);
+          await callDoc.update({ loading: true });
+          offerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
+          answerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
+          pc.onicecandidate = (event) => {
+            console.log("Added offers collection to ",lengthUsers)
+            event.candidate && offerCandidatesCollection.add(event.candidate.toJSON());
+          };
+
+          //Set Local Offer Description:
+          const offerDescription = await pc.createOffer();
+          await pc.setLocalDescription(offerDescription);
+
+          let offer = {
+            sdp: offerDescription.sdp as string,
+            type: offerDescription.type,
+          };
+
+          let offerAnswerPair: OfferAnswerPair = {
+            offer: offer,
+            answer: null,
+          };
+
+          // Get the current array of offerAnswerPair from the callDoc
+          const currentPairs: OfferAnswerPair[] = (await callDoc.get()).data()?.offerAnswerPairs || [];
+
+          // Push the new offerAnswerPair into the array
+          await currentPairs.push(offerAnswerPair);
+          console.log("Current pairs are");
+          console.log(currentPairs);
+          // Update the offerAnswerPairs field in the callDoc
+          await callDoc.update({ offerAnswerPairs: currentPairs });
+          await signalDoc.set({ signal: 1 });
+
+          await callDoc.update({ loading: false });
+        }
         if (signal === 2) {
           console.log("inside signal 2");
           await callDoc.update({ loading: true });
 
-          const currentConnectedUsers = (await callDoc.get()).data()?.offerAnswerPairs;
-          const lengthUsers = currentConnectedUsers.length;
+          console.log("Length users in signal 2 is ",lengthUsers)
+
           const answerDescription = new RTCSessionDescription((await callDoc.get()).data()?.offerAnswerPairs[lengthUsers - 1].answer);
 
           pc.setRemoteDescription(answerDescription);
@@ -157,13 +176,34 @@ const Home = () => {
           );
           await signalDoc.update({ signal: 3 });
         } else if (signal === 4) {
-          await signalDoc.update({ signal: 0 });
+
+          setpcConns((prevPcConns) => {
+            const newPcConns = [...prevPcConns, pc];
+            console.log("The pc connections in array are ", newPcConns);
+            return newPcConns;
+          });
+
+          await callDoc.update({ connectedUsers: (await callDoc.get()).data()?.connectedUsers + 1 });
+          signalDoc = callDoc.collection("signal").doc(`signal${lengthUsers + 1}`);
+          signalDoc.onSnapshot(
+            async (doc) => {
+              if (doc.exists) {
+                const data = doc.data();
+                const signal = data?.signal;
+                console.log("Signal changed to ", signal);
+                handleSignalChange(signal);
+              }
+            },
+            (error) => {
+              console.error("Error listening to document:", error);
+            }
+          );
+
+          await signalDoc.set({ signal: 0 });
         }
 
-        // const newPcConns = [...pcConns, pc];
-        // setpcConns(newPcConns);
-      };
 
+      };
       signalDoc.onSnapshot(
         async (doc) => {
           if (doc.exists) {
@@ -179,32 +219,57 @@ const Home = () => {
       );
     };
 
+    
     const handleAnswerButtonClick = async () => {
       let callId;
       if (callInputRef.current) {
         callId = callInputRef.current.value;
       }
       const callDocHost = firestore.collection("calls").doc(callId);
+
+      const lengthUsers = (await callDocHost.get()).data()?.connectedUsers;
       const myDoc = firestore.collection("calls").doc();
-      const signalDoc = callDocHost.collection("signal").doc(`signal`);
-      const offerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate1`).collection("offerCandidates");
+      const signalDoc = callDocHost.collection("signal").doc(`signal${lengthUsers}`);
+
+      const currentConnectedUsers = (await callDocHost.get()).data()?.offerAnswerPairs;
+      const offerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
+
+      let pc : RTCPeerConnection;
 
       signalDoc.onSnapshot(
         async (doc) => {
           if (doc.exists) {
             const data = doc.data();
             const signal = data?.signal;
-            let lengthUsers;
             if (signal === 1) {
               console.log("Signal is 1");
-              const currentConnectedUsers = (await callDocHost.get()).data()?.offerAnswerPairs;
-              lengthUsers = currentConnectedUsers.length;
               console.log("Currently connected users are ", lengthUsers);
+
+              pc = new RTCPeerConnection(servers);
+
+              localStream?.getTracks().forEach((track) => {
+                pc.addTrack(track, localStream as MediaStream);
+              });
+        
+        
+              pc.ontrack = (event) => {
+                event.streams[0].getTracks().forEach((track) => {
+                  if (remoteStream) {
+                    remoteStream.addTrack(track);
+                  }
+                });
+        
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.srcObject = remoteStream;
+                }
+              };
+        
               //Creating new pc and setting its answer
 
               const answerCandidatesColletion = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
               if (pc)
                 pc.onicecandidate = (event) => {
+                  console.log(`Adding answer candidates to collection ${lengthUsers}`)
                   event.candidate && answerCandidatesColletion.add(event.candidate.toJSON());
                 };
 
@@ -223,9 +288,10 @@ const Home = () => {
               };
 
               currentConnectedUsers[lengthUsers - 1].answer = answer;
-
+              //Push this to the existing array
               // Update the document with the modified offerAnswerPairs array
               await callDocHost.update({ offerAnswerPairs: currentConnectedUsers });
+              
 
               // set signal to 2
               await signalDoc.update({ signal: 2 });
@@ -275,6 +341,8 @@ const Home = () => {
                   console.error("Error listening for offerCandidates changes:", error);
                 }
               );
+              
+              await signalDoc.update({ signal: 4 });
             }
           }
         },
