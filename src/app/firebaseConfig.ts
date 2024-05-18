@@ -4,15 +4,16 @@ import 'firebase/compat/firestore';
 
 
 const firebaseConfig = {
-    apiKey: "AIzaSyDqUS57eUSz3bE-QUCNg0s0si9JG8cLQNo",
-    authDomain: "tech-rtc-eb651.firebaseapp.com",
-    databaseURL: "https://tech-rtc-eb651-default-rtdb.firebaseio.com",
-    projectId: "tech-rtc-eb651",
-    storageBucket: "tech-rtc-eb651.appspot.com",
-    messagingSenderId: "1088283860807",
-    appId: "1:1088283860807:web:bbf9fac412035a542d3662",
-    measurementId: "G-M7EV605HCX",
-  };
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+};
+
 
   if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
