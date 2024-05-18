@@ -555,7 +555,7 @@ const Home = () => {
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
         <span className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>
-          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline className="w-full mx-auto rounded-md"></video>
+          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-full mx-auto rounded-md"></video>
         </span>
         {remoteStreams.map((_, index) => (
           <span key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
