@@ -550,7 +550,7 @@ const Home = () => {
   }, [remoteVideoRefs, remoteStreams]);
 
   return (
-    <div className="container mx-auto p-2 ">
+    <div className="mx-auto p-5 ">
       <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
         <span className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
@@ -581,7 +581,7 @@ const Home = () => {
 
       <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
       <p className="mb-2">Answer the call from a different browser window or device</p>
-      <div className="flex space-x-2">
+      <div className="flex space-x-2 w-1/2 mx-auto">
         <input ref={callInputRef} className="flex-grow p-2 border border-gray-300 rounded-md" />
         <button
           ref={answerButtonRef}
