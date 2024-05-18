@@ -385,7 +385,7 @@ const Home = () => {
                   await signalDoc.set({ signal: 1 });
                 } else if (signal == 2) {
                   const answerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs.answer);
-                  console.log('Data on receiver is ',(await offerAnswerPairs.get()).data()?.offerAnswerPairs.answer)
+                  console.log("Data on receiver is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs.answer);
                   pc.setRemoteDescription(answerDescription);
 
                   answerCandidatesCollection.onSnapshot(
@@ -423,18 +423,17 @@ const Home = () => {
         let signalDoc = callDocHost.collection("signal").doc(`signal${myIndex}${existingCaller}`);
         let offerAnswerPairs: firebase.firestore.DocumentReference<firebase.firestore.DocumentData>;
         let offerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${myIndex}${existingCaller}`).collection("offerCandidates");
-        let pc: RTCPeerConnection; 
-
+        let pc: RTCPeerConnection;
 
         signalDoc.onSnapshot(async (doc) => {
           if (doc.exists) {
             const data = doc.data();
             const signal = data?.signal;
-            
+
             if (signal === 1) {
-              pc = new RTCPeerConnection(servers); 
+              pc = new RTCPeerConnection(servers);
               offerAnswerPairs = callDocHost.collection("otherCandidates").doc(`offerAnswerPairs${myIndex}${existingCaller}`);
-              console.log(`pair is ${myIndex}${existingCaller}`)
+              console.log(`pair is ${myIndex}${existingCaller}`);
 
               localStream?.getTracks().forEach((track) => {
                 pc.addTrack(track, localStream as MediaStream);
@@ -455,18 +454,17 @@ const Home = () => {
               };
 
               const answerCandidatesCollection = callDocHost
-                    .collection("otherCandidates")
-                    .doc(`candidate${myIndex}${existingCaller}`)
-                    .collection("answerCandidates");
+                .collection("otherCandidates")
+                .doc(`candidate${myIndex}${existingCaller}`)
+                .collection("answerCandidates");
               if (pc)
                 pc.onicecandidate = (event) => {
                   event.candidate && answerCandidatesCollection.add(event.candidate.toJSON());
                 };
 
               const offerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].offer);
-              console.log("offer is ",(await offerAnswerPairs.get()).data()?.offerAnswerPairs)
+              console.log("offer is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs);
               await pc.setRemoteDescription(offerDescription);
-
 
               const answerDescription = await pc.createAnswer();
               await pc.setLocalDescription(answerDescription);
@@ -476,16 +474,15 @@ const Home = () => {
                 type: answerDescription.type,
               };
 
-              const currentPair = (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0]
-              console.log("Current pair is ",currentPair)
-              currentPair.answer = answer
+              const currentPair = (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0];
+              console.log("Current pair is ", currentPair);
+              currentPair.answer = answer;
 
               await offerAnswerPairs.update({ offerAnswerPairs: currentPair });
 
               await signalDoc.update({ signal: 2 });
-            }
-            else if (signal === 3) {
-              console.log("The remote description after setting it is ",pc)
+            } else if (signal === 3) {
+              console.log("The remote description after setting it is ", pc);
               offerCandidatesCollection.get().then((snapshot) => {
                 snapshot.docs.forEach((doc) => {
                   const candidateData = doc.data();
@@ -523,8 +520,6 @@ const Home = () => {
 
               await signalDoc.update({ signal: 4 });
             }
-
-
           }
         });
       });
@@ -555,38 +550,54 @@ const Home = () => {
   }, [remoteVideoRefs, remoteStreams]);
 
   return (
-    <div>
-      <h2>1. Start your Webcam</h2>
-      <div className="videos">
-        <span>
-          <h3>Local Stream</h3>
-          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline></video>
+    <div className="container mx-auto p-2 ">
+      <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>
+      <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
+        <span className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+          <h3 className="text-xl font-medium mb-2">Local Stream</h3>
+          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline className="w-full mx-auto rounded-md"></video>
         </span>
         {remoteStreams.map((_, index) => (
-          <span key={index}>
-            <h3>Remote Stream {index + 1}</h3>
-            <video ref={remoteVideoRefs[index]} autoPlay playsInline></video>
+          <span key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+            <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
+            <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-full mx-auto rounded-md"></video>
           </span>
         ))}
       </div>
+      <h2 className="text-2xl font-semibold my-4">1. Start your Webcam</h2>
 
-      <button ref={webcamButtonRef}>Start webcam</button>
-      <h2>2. Create a new Call</h2>
-      <button ref={callButtonRef} disabled>
+      <button ref={webcamButtonRef} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+        Start webcam
+      </button>
+
+      <h2 className="text-2xl font-semibold mt-8 mb-4">2. Create a new Call</h2>
+      <button
+        ref={callButtonRef}
+        disabled
+        className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
         Create Call (offer)
       </button>
 
-      <h2>3. Join a Call</h2>
-      <p>Answer the call from a different browser window or device</p>
+      <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
+      <p className="mb-2">Answer the call from a different browser window or device</p>
+      <div className="flex space-x-2">
+        <input ref={callInputRef} className="flex-grow p-2 border border-gray-300 rounded-md" />
+        <button
+          ref={answerButtonRef}
+          disabled
+          className="px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Answer
+        </button>
+      </div>
 
-      <input ref={callInputRef} />
-      <button ref={answerButtonRef} disabled>
-        Answer
-      </button>
-
-      <h2>4. Hangup</h2>
-
-      <button ref={hangupButtonRef} disabled>
+      <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
+      <button
+        ref={hangupButtonRef}
+        disabled
+        className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed mb-5"
+      >
         Hangup
       </button>
     </div>
