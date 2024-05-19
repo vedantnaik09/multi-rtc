@@ -555,12 +555,12 @@ const Home = () => {
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
         <span className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>
-          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-full mx-auto rounded-md"></video>
+          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>
         </span>
         {remoteStreams.map((_, index) => (
           <span key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
             <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
-            <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-full mx-auto rounded-md"></video>
+            <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>
           </span>
         ))}
       </div>
@@ -581,12 +581,12 @@ const Home = () => {
 
       <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
       <p className="mb-2">Answer the call from a different browser window or device</p>
-      <div className="flex space-x-2 w-1/2 mx-auto">
-        <input ref={callInputRef} className="flex-grow p-2 border border-gray-300 rounded-md" />
+      <div className="flex w-full mx-auto gap-2 justify-center">
+        <input ref={callInputRef} className="p-2 border border-gray-300 rounded-md w-[400px]" />
         <button
           ref={answerButtonRef}
           disabled
-          className="px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Answer
         </button>
