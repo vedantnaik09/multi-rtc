@@ -14,6 +14,7 @@ type OfferAnswerPair = {
 };
 
 const Home = () => {
+  const [isClient, setIsClient] = useState(false)
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
   const callButtonRef = useRef<HTMLButtonElement>(null);
   const callInputRef = useRef<HTMLInputElement>(null);
@@ -549,19 +550,23 @@ const Home = () => {
     });
   }, [remoteVideoRefs, remoteStreams]);
 
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
   return (
     <div className="mx-auto p-5 ">
       <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
-        <span className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+        <div className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>
-          <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>
-        </span>
+          {isClient && <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>}
+        </div>
         {remoteStreams.map((_, index) => (
-          <span key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+          <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
             <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
-            <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>
-          </span>
+            {isClient && <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>}
+          </div>
         ))}
       </div>
       <h2 className="text-2xl font-semibold my-4">1. Start your Webcam</h2>
