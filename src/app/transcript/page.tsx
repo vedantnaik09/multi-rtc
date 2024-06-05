@@ -17,10 +17,11 @@ type OfferAnswerPair = {
   } | null;
 };
 
-const page = () => {
+const Page = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
+  
 
   const RealTimeTranscript = dynamic(() => import("./realTimeTranscript"), { ssr: false });
 
@@ -674,4 +675,4 @@ const page = () => {
   );
 };
 
-export default page;
+export default Page;

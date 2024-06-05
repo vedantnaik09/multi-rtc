@@ -10,7 +10,7 @@ import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTransc
 
 const partialTranscriptPauseThreshold = 10;
 
-const realTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
+const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
   const [status, setStatus] = useState<"RECORDING" | "PAUSED" | "STOPPED">("STOPPED");
   const [vocabSwitch, setVocabSwitch] = useState<"ON" | "OFF">("ON");
   const [stream, setStream] = useState<MediaStream | undefined>();
@@ -222,4 +222,4 @@ const realTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
   );
 };
 
-export default realTimeTranscript;
+export default RealTimeTranscript;
