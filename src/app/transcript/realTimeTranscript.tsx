@@ -211,13 +211,31 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
     }
   };
 
+  const stop = () => {
+    console.log("Stopping");
+    if (status == "RECORDING") {
+      if (socket) {
+        socket.current?.send(JSON.stringify({ terminate_session: true }));
+        socket.current?.close();
+        console.log("socketconnection closed 1");
+        socket.current = null;
+      }
+      if (recorder) {
+        recorder.pauseRecording();
+        setRecorder(null);
+      }
+      setStatus("STOPPED");
+      showWarningToast("recording paused");
+    }
+  };
+
 
   return (
     <div>
       <button onClick={run} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">
         Start Recording
       </button>
-      <button disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">Stop Recording</button>
+      <button onClick={stop} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">Stop Recording</button>
     </div>
   );
 };
