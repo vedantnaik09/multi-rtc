@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, Suspense } from "react";
 import { firestore, firebase } from "./firebaseConfig";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -15,8 +15,15 @@ type OfferAnswerPair = {
     type: RTCSdpType;
   } | null;
 };
+const Page = () => {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PageContent />
+    </Suspense>
+  );
+};
 
-const Home = () => {
+const PageContent = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
@@ -652,4 +659,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default Page;

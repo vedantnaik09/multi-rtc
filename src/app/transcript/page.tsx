@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, Suspense } from "react";
 import { firestore, firebase, database } from "../firebaseConfig";
 import dynamic from "next/dynamic";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
@@ -16,8 +16,15 @@ type OfferAnswerPair = {
     type: RTCSdpType;
   } | null;
 };
-
 const Page = () => {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <TranscriptMeet />
+    </Suspense>
+  );
+};
+
+const TranscriptMeet = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
