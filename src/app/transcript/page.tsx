@@ -2,7 +2,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { firestore, firebase, database } from "../firebaseConfig";
 import dynamic from "next/dynamic";
-
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { FaCopy } from "react-icons/fa";
 
 type OfferAnswerPair = {
   offer: {
@@ -15,14 +17,15 @@ type OfferAnswerPair = {
   } | null;
 };
 
-
 const page = () => {
-  const RealTimeTranscript = dynamic(
-    () => import("./realTimeTranscript"),
-    { ssr: false }
-  );
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const { replace } = useRouter();
+
+  const RealTimeTranscript = dynamic(() => import("./realTimeTranscript"), { ssr: false });
 
   const [isClient, setIsClient] = useState(false);
+  const [inCall, setInCall] = useState(false);
   const [callId, setCallId] = useState("");
   const [isHost, setIsHost] = useState(false);
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
@@ -38,7 +41,6 @@ const page = () => {
 
   //Transcript code
 
-  
   //
 
   useEffect(() => {
@@ -75,10 +77,14 @@ const page = () => {
     }
 
     const handleCallButtonClick = async () => {
+      setInCall(true);
+
       const callDoc = firestore.collection("calls").doc();
       let signalDoc = callDoc.collection("signal").doc(`signal1`);
       let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
-      await setCallId(callDoc.id)
+      await setCallId(callDoc.id);
+      replace(`${pathname}?id=${callDoc.id}`);
+
       await indexOfOtherConnectedCandidates.set({ indexOfCurrentUsers: [] });
       if (callInputRef.current) {
         callInputRef.current.value = callDoc.id;
@@ -91,7 +97,6 @@ const page = () => {
       let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
 
       setIsHost(true);
-
 
       await signalDoc.set({ signal: 0 });
       let pc: RTCPeerConnection;
@@ -216,11 +221,14 @@ const page = () => {
     };
 
     const handleAnswerButtonClick = async () => {
+      setInCall(true);
       let callId;
       if (callInputRef.current) {
         callId = callInputRef.current.value;
-        setCallId(callInputRef.current.value)
+        setCallId(callInputRef.current.value);
+        replace(`${pathname}?id=${callInputRef.current.value}`);
       }
+
       const callDocHost = firestore.collection("calls").doc(callId);
 
       const lengthUsers = (await callDocHost.get()).data()?.connectedUsers;
@@ -577,22 +585,27 @@ const page = () => {
   }, [remoteVideoRefs, remoteStreams]);
 
   useEffect(() => {
+    const id = searchParams.get("id");
+    if (id) {
+      setCallId(id);
+      if (callInputRef.current) {
+        callInputRef.current.value = id;
+      }
+    }
     setIsClient(true);
   }, []);
 
-  useEffect(() => {
-    if (isHost === true) {
-      const newPostRef = database.ref(`${callId}/hello`).push();
-      newPostRef
-        .set("hello world")
-        .then(() => {
-          console.log("Data written successfully!");
-        })
-        .catch((error) => {
-          console.error("Error writing data: ", error);
-        });
-    }
-  }, [isHost]);
+  const copyLink = () => {
+    const currentUrl = window.location.href;
+    navigator.clipboard
+      .writeText(currentUrl)
+      .then(() => {
+        toast.success("Link copied");
+      })
+      .catch((error) => {
+        console.error("Failed to copy link: ", error);
+      });
+  };
 
   return (
     <div className="mx-auto p-5 ">
@@ -637,6 +650,15 @@ const page = () => {
         >
           Answer
         </button>
+        <button
+          disabled={!inCall}
+          onClick={copyLink}
+          className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md"
+        >
+          <div onClick={copyLink} className={`${inCall ? "" : "cursor-not-allowed"} px-2 py-1 text-white rounded-md `} title="Copy Link">
+            <FaCopy />
+          </div>
+        </button>
       </div>
 
       <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
@@ -647,8 +669,7 @@ const page = () => {
       >
         Hangup
       </button>
-      <RealTimeTranscript callId={callId} remoteStreams={remoteStreams}/>
-
+      <RealTimeTranscript callId={callId} remoteStreams={remoteStreams} />
     </div>
   );
 };

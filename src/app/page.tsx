@@ -1,6 +1,9 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { firestore, firebase } from "./firebaseConfig";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { FaCopy } from "react-icons/fa";
 
 type OfferAnswerPair = {
   offer: {
@@ -14,7 +17,12 @@ type OfferAnswerPair = {
 };
 
 const Home = () => {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const { replace } = useRouter();
+
   const [isClient, setIsClient] = useState(false);
+  const [inCall, setInCall] = useState(false);
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
   const callButtonRef = useRef<HTMLButtonElement>(null);
   const callInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +68,7 @@ const Home = () => {
     }
 
     const handleCallButtonClick = async () => {
+      setInCall(true)
       const callDoc = firestore.collection("calls").doc();
       let signalDoc = callDoc.collection("signal").doc(`signal1`);
       let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
@@ -67,6 +76,7 @@ const Home = () => {
       if (callInputRef.current) {
         callInputRef.current.value = callDoc.id;
       }
+      replace(`${pathname}?id=${callDoc.id}`);
       await callDoc.set({ loading: false });
       await callDoc.set({ connectedUsers: 1 });
 
@@ -197,9 +207,11 @@ const Home = () => {
     };
 
     const handleAnswerButtonClick = async () => {
+      setInCall(true)
       let callId;
       if (callInputRef.current) {
         callId = callInputRef.current.value;
+        replace(`${pathname}?id=${callInputRef.current.value}`);
       }
       const callDocHost = firestore.collection("calls").doc(callId);
 
@@ -557,8 +569,26 @@ const Home = () => {
   }, [remoteVideoRefs, remoteStreams]);
 
   useEffect(() => {
+    const id = searchParams.get("id");
+    if (id) {
+      if (callInputRef.current) {
+        callInputRef.current.value = id;
+      }
+    }
     setIsClient(true);
   }, []);
+
+  const copyLink = () => {
+    const currentUrl = window.location.href;
+    navigator.clipboard
+      .writeText(currentUrl)
+      .then(() => {
+        toast.success("Link copied")
+      })
+      .catch((error) => {
+        console.error("Failed to copy link: ", error);
+      });
+  };
 
   return (
     <div className="mx-auto p-5 ">
@@ -602,6 +632,11 @@ const Home = () => {
           className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Answer
+        </button>
+        <button disabled={!inCall} onClick={copyLink} className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md">
+          <div onClick={copyLink} className={`${inCall?'':'cursor-not-allowed'} px-2 py-1 text-white rounded-md `} title="Copy Link">
+            <FaCopy/>
+          </div>
         </button>
       </div>
 
