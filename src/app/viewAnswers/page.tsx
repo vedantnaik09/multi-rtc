@@ -6,6 +6,7 @@ const Page = () => {
   const [transcripts, setTranscripts] = useState<any[]>([]);
   const [selectedCallId, setSelectedCallId] = useState('');
   const [callIds, setCallIds] = useState<string[]>([]);
+  const [callTranscripts, setCallTranscripts] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchCallIds = async () => {
@@ -16,7 +17,7 @@ const Page = () => {
         const initialCallIds = data ? Object.keys(data).filter(Boolean) : [];
         setCallIds(initialCallIds);
         setSelectedCallId(initialCallIds[0] || '');
-  
+
         // Listen for new call IDs
         databaseRef.on('child_added', (snapshot) => {
           const newCallId = snapshot.key;
@@ -28,7 +29,7 @@ const Page = () => {
         console.error('Error fetching call IDs:', error);
       }
     };
-  
+
     fetchCallIds();
   }, []);
 
@@ -44,7 +45,20 @@ const Page = () => {
         }
       }
       setTranscripts(transcriptsData);
-
+  
+      // Fetch call transcripts
+      const transcriptRef = database.ref(`flowofwords/${callId}/transcript`);
+      const transcriptSnapshot = await transcriptRef.once('value');
+      const transcriptData = transcriptSnapshot.val();
+      const callTranscriptArray = transcriptData ? Object.values(transcriptData) as string[] : [];
+      setCallTranscripts(callTranscriptArray);
+  
+      // Listen for new transcripts
+      transcriptRef.on('child_added', (snapshot) => {
+        const newTranscript = snapshot.val();
+        setCallTranscripts((prevTranscripts) => [...prevTranscripts, newTranscript]);
+      });
+  
       databaseRef.on('child_added', (snapshot) => {
         const newTranscript = snapshot.val();
         setTranscripts((prevTranscripts) => [...prevTranscripts, newTranscript]);
@@ -86,6 +100,16 @@ const Page = () => {
               <p className="text-gray-600">Answer: {transcript.answer}</p>
             </div>
           ))}
+        </div>
+        <div className="mt-6">
+          <h2 className="text-lg font-bold mb-2 text-gray-800">Transcripts</h2>
+          <div className="bg-gray-50 p-4 rounded-lg shadow-inner">
+            {callTranscripts.map((transcript, index) => (
+              <p key={index} className="text-gray-600 mb-2">
+                {transcript}
+              </p>
+            ))}
+          </div>
         </div>
       </div>
     </div>
