@@ -4,15 +4,16 @@ import { firestore, firebase, database } from "../firebaseConfig";
 import toast from "react-hot-toast";
 import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTranscript";
 const Page = () => {
-  const [transcripts, setTranscripts] = useState<any[]>([]);
   const [selectedCallId, setSelectedCallId] = useState("");
   const [callIds, setCallIds] = useState<string[]>([]);
+  const [callTranscripts, setCallTranscripts] = useState<string[]>([]);
   const [selectedText, setSelectedText] = useState("");
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupPosition, setPopupPosition] = useState({
     left: "0px",
     top: "0px",
   });
+
 
   useEffect(() => {
     const fetchCallIds = async () => {
@@ -50,12 +51,20 @@ const Page = () => {
           transcriptsData.push(data[key]);
         }
       }
-      setTranscripts(transcriptsData);
 
-      databaseRef.on("child_added", (snapshot) => {
+      // Fetch call transcripts
+      const transcriptRef = database.ref(`flowofwords/${callId}/transcript`);
+      const transcriptSnapshot = await transcriptRef.once("value");
+      const transcriptData = transcriptSnapshot.val();
+      const callTranscriptArray = transcriptData ? (Object.values(transcriptData) as string[]) : [];
+      setCallTranscripts(callTranscriptArray);
+
+      // Listen for new transcripts
+      transcriptRef.on("child_added", (snapshot) => {
         const newTranscript = snapshot.val();
-        setTranscripts((prevTranscripts) => [...prevTranscripts, newTranscript]);
+        setCallTranscripts((prevTranscripts) => [...prevTranscripts, newTranscript]);
       });
+
     } catch (error) {
       console.error("Error fetching transcripts:", error);
     }
@@ -93,6 +102,7 @@ const Page = () => {
     }
   };
 
+  
   async function sendToChatgptAndPushInDatabase() {
     try {
       if (!selectedText) {
@@ -100,9 +110,16 @@ const Page = () => {
         return;
       }
       toast("Asking AI. pls wait");
-      sendTranscriptTo_Chatgpt4O_AndPushInDatabase(selectedCallId, selectedText, "1");
+      sendTranscriptTo_Chatgpt4O_AndPushInDatabase(
+        selectedCallId,
+        selectedText,
+        "1"
+      );
     } catch (err) {
-      console.log("error while writing data to room or chatgpt response is not a json:", err);
+      console.log(
+        "error while writing data to room or chatgpt response is not a json:",
+        err
+      );
     }
   }
 
@@ -130,7 +147,7 @@ const Page = () => {
         </div>
       )}
       <div className="max-w-4xl mx-auto bg-white shadow-md rounded-lg p-6">
-        <h1 className="text-2xl font-bold mb-4 text-gray-800">Question Answers</h1>
+        <h1 className="text-2xl font-bold mb-4 text-gray-800">Moderator Page</h1>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="callIdSelect">
             Select Call ID
@@ -148,13 +165,16 @@ const Page = () => {
             ))}
           </select>
         </div>
-        <div className="bg-gray-50 p-4 rounded-lg shadow-inner overflow-y-auto h-[70vh]">
-          {transcripts.map((transcript, index) => (
-            <div key={index} className="mb-4">
-              <p className="text-gray-700 font-semibold">Question: {transcript.question}</p>
-              <p className="text-gray-600">Answer: {transcript.answer}</p>
-            </div>
-          ))}
+
+        <div className="mt-6">
+          <h2 className="text-lg font-bold mb-2 text-gray-800">Transcripts</h2>
+          <div className="bg-gray-50 p-4 rounded-lg shadow-inner overflow-y-auto h-[70vh]">
+            {callTranscripts.map((transcript, index) => (
+              <p key={index} className="text-gray-600 mb-2">
+                {transcript}
+              </p>
+            ))}
+          </div>
         </div>
       </div>
     </div>

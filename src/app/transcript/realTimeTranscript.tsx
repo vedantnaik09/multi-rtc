@@ -10,7 +10,7 @@ import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTransc
 
 const partialTranscriptPauseThreshold = 10;
 
-const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
+const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
   const [status, setStatus] = useState<"RECORDING" | "PAUSED" | "STOPPED">("STOPPED");
   const [vocabSwitch, setVocabSwitch] = useState<"ON" | "OFF">("ON");
   const [stream, setStream] = useState<MediaStream | undefined>();
@@ -94,7 +94,6 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
               updateTranscriptInDatabase(res.text);
               sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId, res.text, "1");
               pauseDetected.current = false;
-
             } else {
               finalTexts[`${currentPauseTime.current}-${res.audio_start}`] = res.text;
             }
@@ -130,51 +129,45 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
           console.log("socketconnection closed 2 ", event);
           socket.current = null;
           toast.error("websocket connection closed.");
+          // Reconnect to the WebSocket server if necessary
+          if (event.code === 1009) {
+            console.log("Reconnecting to the WebSocket server...");
+            toast.error("Reconnecting 1009");
+          }
         };
         newSocket.onopen = async () => {
-          // get the audio stream directly
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  
-          // Create a new MediaStream that includes the local audio stream and the remote audio streams
-          const combinedStream = new MediaStream();
-          combinedStream.addTrack(audioStream.getTracks()[0]);
-          toast.dismiss();
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+
           toast.success("recording  started");
-          // remoteStreams.forEach((stream) => {
-          //   stream.getTracks().forEach((track) => {
-          //     if (track.kind === 'audio') {
-          //       combinedStream.addTrack(track);
-          //     }
-          //   });
-          // });
-  
+
           setStatus("RECORDING");
-          setStream(combinedStream);
-  
-          let recorder = new MediaRecorder(combinedStream);
-  
+          setStream(audioStream);
+
+          let recorder = new MediaRecorder(audioStream);
+
           let audioChunks: Blob[] = [];
           recorder.ondataavailable = (e) => {
             audioChunks.push(e.data);
           };
-  
+
           recorder.onstop = () => {
             // this downloads as .ogx in firefox and .mp3 in chrome
             const audioBlob = new Blob(audioChunks, { type: "audio/mp3" });
             console.log("AUDIBLOB : ", audioBlob);
             const url = URL.createObjectURL(audioBlob);
             console.log("URL IS ", url);
-  
+
             const now = new Date();
             const day = String(now.getDate()).padStart(2, "0");
             const month = String(now.getMonth() + 1).padStart(2, "0"); // January is 0!
             const year = now.getFullYear();
           };
-  
+
           recorder.start();
           mediaRecorderforFile.current = recorder;
-  
-          const localRecorder = new RecordRTC(combinedStream, {
+
+          const localRecorder = new RecordRTC(audioStream, {
             type: "audio",
             mimeType: "audio/webm;codecs=pcm", // endpoint requires 16bit PCM audio
             recorderType: StereoAudioRecorder,
@@ -189,6 +182,16 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
                 const base64data = reader.result as string;
                 if (socket) {
                   if (typeof base64data == "string") {
+                    console.log("Length is ",
+                      JSON.stringify({
+                        audio_data: base64data?.split("base64,")[1],
+                      }).length
+                    );
+                    console.log("The data is ",
+                      JSON.stringify({
+                        audio_data: base64data?.split("base64,")[1],
+                      })
+                    );
                     socket.current?.send(
                       JSON.stringify({
                         audio_data: base64data?.split("base64,")[1],
@@ -229,13 +232,14 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
     }
   };
 
-
   return (
     <div className="md:flex-row flex-col flex gap-2 mx-auto justify-center items-center">
       <button onClick={run} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">
         Start Recording
       </button>
-      <button onClick={stop} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">Stop Recording</button>
+      <button onClick={stop} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">
+        Stop Recording
+      </button>
     </div>
   );
 };

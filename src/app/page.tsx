@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState, Suspense } from "react";
 import { firestore, firebase } from "./firebaseConfig";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { FaCopy } from "react-icons/fa";
+import { FaMicrophoneAlt, FaVideoSlash, FaMicrophone, FaVideo, FaCopy } from "react-icons/fa";
 
 type OfferAnswerPair = {
   offer: {
@@ -38,8 +38,12 @@ const PageContent = () => {
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [remoteVideoRefs, setRemoteVideoRefs] = useState<React.RefObject<HTMLVideoElement>[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<MediaStream[]>([]);
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
+  const [accessGiven, setAccessGiven] = useState(false);
 
-  let localStream: MediaStream | null = null;
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  let localStream: MediaStream | null;
 
   useEffect(() => {
     const servers = {
@@ -57,7 +61,8 @@ const PageContent = () => {
           video: true,
           audio: true,
         });
-
+        setStream(localStream);
+        setAccessGiven(true);
         if (webcamVideoRef.current && localStream) {
           webcamVideoRef.current.srcObject = localStream;
         }
@@ -75,7 +80,7 @@ const PageContent = () => {
     }
 
     const handleCallButtonClick = async () => {
-      setInCall(true)
+      setInCall(true);
       const callDoc = firestore.collection("calls").doc();
       let signalDoc = callDoc.collection("signal").doc(`signal1`);
       let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
@@ -214,7 +219,7 @@ const PageContent = () => {
     };
 
     const handleAnswerButtonClick = async () => {
-      setInCall(true)
+      setInCall(true);
       let callId;
       if (callInputRef.current) {
         callId = callInputRef.current.value;
@@ -590,11 +595,33 @@ const PageContent = () => {
     navigator.clipboard
       .writeText(currentUrl)
       .then(() => {
-        toast.success("Link copied")
+        toast.success("Link copied");
       })
       .catch((error) => {
         console.error("Failed to copy link: ", error);
       });
+  };
+
+  const handleMicToggle = async () => {
+    setMicEnabled(!micEnabled);
+    console.log(stream);
+    if (stream) {
+      const audioTrack = stream.getTracks().find((track) => track.kind === "audio");
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+      }
+    }
+  };
+
+  const handleVideoToggle = async () => {
+    setVideoEnabled(!videoEnabled);
+    console.log(stream);
+    if (stream) {
+      const videoTrack = stream.getTracks().find((track) => track.kind === "video");
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+      }
+    }
   };
 
   return (
@@ -604,19 +631,50 @@ const PageContent = () => {
         <div className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>
           {isClient && (
-            <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></video>
+            <video
+              id="webcamVideo"
+              ref={webcamVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "
+            ></video>
           )}
-          {!isClient && (<div className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124]  "></div>
-          )}
+          {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
         </div>
         {remoteStreams.map((_, index) => (
           <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
             <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
-            {isClient && <video ref={remoteVideoRefs[index]} autoPlay playsInline className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></video>}
-            {!isClient && <div className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
+            {isClient && (
+              <video
+                ref={remoteVideoRefs[index]}
+                autoPlay
+                playsInline
+                className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "
+              ></video>
+            )}
+            {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
           </div>
         ))}
       </div>
+      {accessGiven && (
+        <div className="mt-5 flex justify-center gap-2">
+          <button
+            onClick={handleMicToggle}
+            className={`px-4 py-2 rounded-md flex items-center gap-2 ${micEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
+          >
+            {micEnabled ? <FaMicrophoneAlt /> : <FaMicrophone />}
+            {micEnabled ? "Disable Mic" : "Enable Mic"}
+          </button>
+          <button
+            onClick={handleVideoToggle}
+            className={`px-4 py-2 rounded-md flex items-center gap-2 ${videoEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
+          >
+            {videoEnabled ? <FaVideoSlash /> : <FaVideo />}
+            {videoEnabled ? "Disable Video" : "Enable Video"}
+          </button>
+        </div>
+      )}
       <h2 className="text-2xl font-semibold my-4">1. Start your Webcam</h2>
 
       <button ref={webcamButtonRef} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
