@@ -231,7 +231,7 @@ const RealTimeTranscript: React.FC<{ callId: string, remoteStreams: MediaStream[
 
 
   return (
-    <div>
+    <div className="md:flex-row flex-col flex gap-2 mx-auto justify-center items-center">
       <button onClick={run} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">
         Start Recording
       </button>

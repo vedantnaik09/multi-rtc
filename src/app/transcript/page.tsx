@@ -28,7 +28,6 @@ const TranscriptMeet = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
-  
 
   const RealTimeTranscript = dynamic(() => import("./realTimeTranscript"), { ssr: false });
 
@@ -619,16 +618,19 @@ const TranscriptMeet = () => {
     <div className="mx-auto p-5 ">
       <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
-        <div className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+        <div className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>
           {isClient && (
-            <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>
+            <video id="webcamVideo" ref={webcamVideoRef} autoPlay playsInline muted className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></video>
+          )}
+          {!isClient && (<div className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>
           )}
         </div>
         {remoteStreams.map((_, index) => (
-          <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md w-[40%]">
+          <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
             <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
-            {isClient && <video ref={remoteVideoRefs[index]} autoPlay playsInline className="w-[40vw] h-[30vw] mx-auto rounded-md bg-[#2c3e50] "></video>}
+            {isClient && <video ref={remoteVideoRefs[index]} autoPlay playsInline className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></video>}
+            {!isClient && <div className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
           </div>
         ))}
       </div>
@@ -649,24 +651,26 @@ const TranscriptMeet = () => {
 
       <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
       <p className="mb-2">Answer the call from a different browser window or device</p>
-      <div className="flex w-full mx-auto gap-2 justify-center">
-        <input ref={callInputRef} className="p-2 border border-gray-300 rounded-md w-[400px]" />
-        <button
-          ref={answerButtonRef}
-          disabled
-          className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Answer
-        </button>
-        <button
-          disabled={!inCall}
-          onClick={copyLink}
-          className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md"
-        >
-          <div onClick={copyLink} className={`${inCall ? "" : "cursor-not-allowed"} px-2 py-1 text-white rounded-md `} title="Copy Link">
-            <FaCopy />
-          </div>
-        </button>
+      <div className="md:flex-row flex flex-col w-full mx-auto gap-2 justify-center items-center">
+        <input ref={callInputRef} className="p-2 border border-gray-300 rounded-md w-[400px]  max-w-full" />
+        <div className="flex gap-2">
+          <button
+            ref={answerButtonRef}
+            disabled
+            className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Answer
+          </button>
+          <button
+            disabled={!inCall}
+            onClick={copyLink}
+            className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md"
+          >
+            <div onClick={copyLink} className={`${inCall ? "" : "cursor-not-allowed"} px-2 py-1 text-white rounded-md `} title="Copy Link">
+              <FaCopy />
+            </div>
+          </button>
+        </div>
       </div>
 
       <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
