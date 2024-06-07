@@ -638,7 +638,7 @@ const PageContent = () => {
   if(user)
   return (
     <div className="mx-auto p-5 ">
-      <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>
+      <h2 className="text-2xl font-semibold my-8">Multi-RTC</h2>
       <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
         <div className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
           <h3 className="text-xl font-medium mb-2">Local Stream</h3>

@@ -136,38 +136,59 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
           }
         };
         newSocket.onopen = async () => {
+          const audioContext = new AudioContext();
+        
+          // Get local audio stream
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-
-          toast.dismiss()
+          const audioIn_01 = audioContext.createMediaStreamSource(audioStream);
+          console.log("Local audio stream tracks:", audioStream.getTracks());
+        
+          // Get remote audio streams
+          const remoteAudioSources: MediaStreamAudioSourceNode[] = [];
+          remoteStreams.forEach((remoteStream) => {
+            const audioIn = audioContext.createMediaStreamSource(remoteStream);
+            remoteAudioSources.push(audioIn);
+            console.log("Tracks for remote stream:", remoteStream.getTracks());
+          });
+        
+          // Create a destination to combine all audio sources
+          const dest = audioContext.createMediaStreamDestination();
+          audioIn_01.connect(dest);
+          remoteAudioSources.forEach((source) => source.connect(dest));
+        
+          toast.dismiss();
           toast.success("Recording started");
-
+        
           setStatus("RECORDING");
-          setStream(audioStream);
-
-          let recorder = new MediaRecorder(audioStream);
-
-          let audioChunks: Blob[] = [];
+        
+          const combinedStream = dest.stream;
+          setStream(combinedStream);
+          console.log("Combined stream tracks:", combinedStream.getTracks());
+        
+          let recorder = new MediaRecorder(combinedStream);
+        
+          let audioChunks: BlobPart[] | undefined = [];
           recorder.ondataavailable = (e) => {
             audioChunks.push(e.data);
           };
-
+        
           recorder.onstop = () => {
             // this downloads as .ogx in firefox and .mp3 in chrome
             const audioBlob = new Blob(audioChunks, { type: "audio/mp3" });
             console.log("AUDIBLOB : ", audioBlob);
             const url = URL.createObjectURL(audioBlob);
             console.log("URL IS ", url);
-
+        
             const now = new Date();
             const day = String(now.getDate()).padStart(2, "0");
             const month = String(now.getMonth() + 1).padStart(2, "0"); // January is 0!
             const year = now.getFullYear();
           };
-
+        
           recorder.start();
           mediaRecorderforFile.current = recorder;
-
-          const localRecorder = new RecordRTC(audioStream, {
+        
+          const localRecorder = new RecordRTC(combinedStream, {
             type: "audio",
             mimeType: "audio/webm;codecs=pcm", // endpoint requires 16bit PCM audio
             recorderType: StereoAudioRecorder,
@@ -182,16 +203,19 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
                 const base64data = reader.result as string;
                 if (socket) {
                   if (typeof base64data == "string") {
-                    console.log("Length is ",
+                    if (
                       JSON.stringify({
                         audio_data: base64data?.split("base64,")[1],
-                      }).length
-                    );
-                    socket.current?.send(
-                      JSON.stringify({
-                        audio_data: base64data?.split("base64,")[1],
-                      })
-                    );
+                      }).length < 130000
+                    ) {
+                      socket.current?.send(
+                        JSON.stringify({
+                          audio_data: base64data?.split("base64,")[1],
+                        })
+                      );
+                    } else {
+                      console.log("Unnecessary big message");
+                    }
                   }
                 }
               };

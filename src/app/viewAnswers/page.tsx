@@ -34,22 +34,21 @@ const Page = () => {
         const databaseRef = database.ref("flowofwords");
         const snapshot = await databaseRef.once("value");
         const data = snapshot.val();
-        const initialCallIds = data ? Object.keys(data).filter(Boolean) : [];
-        setCallIds(initialCallIds);
-        setSelectedCallId(initialCallIds[0] || "");
-
+        const initialCallIds = new Set(data ? Object.keys(data).filter(Boolean) : []);
+        setCallIds(Array.from(initialCallIds));
+        setSelectedCallId(initialCallIds.values().next().value || "");
+  
         // Listen for new call IDs
         databaseRef.on("child_added", (snapshot) => {
           const newCallId = snapshot.key;
           if (newCallId) {
-            setCallIds((prevCallIds) => [...prevCallIds, newCallId].filter(Boolean));
+            setCallIds((prevCallIds) => Array.from(new Set([...prevCallIds, newCallId])));
           }
         });
       } catch (error) {
         console.error("Error fetching call IDs:", error);
       }
     };
-
     fetchCallIds();
   }, []);
 

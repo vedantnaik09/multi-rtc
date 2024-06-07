@@ -27,7 +27,7 @@ function Login() {
   return (
     <div className="flex flex-col gap-6 items-center justify-center min-h-screen bg-gray-100">
   <p className="font-bold text-2xl text-center text-gray-800">
-    Welcome to TechRTC
+    Welcome to MultiRTC
   </p>
   <div
     className="flex flex-col gap-6 items-center justify-center w-full max-w-md p-8 bg-white rounded-lg border border-gray-300 shadow-md"
