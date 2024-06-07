@@ -138,8 +138,8 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
         newSocket.onopen = async () => {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
-
-          toast.success("recording  started");
+          toast.dismiss()
+          toast.success("Recording started");
 
           setStatus("RECORDING");
           setStream(audioStream);
@@ -186,11 +186,6 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
                       JSON.stringify({
                         audio_data: base64data?.split("base64,")[1],
                       }).length
-                    );
-                    console.log("The data is ",
-                      JSON.stringify({
-                        audio_data: base64data?.split("base64,")[1],
-                      })
                     );
                     socket.current?.send(
                       JSON.stringify({
