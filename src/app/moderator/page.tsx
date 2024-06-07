@@ -3,7 +3,20 @@ import React, { useState, useEffect } from "react";
 import { firestore, firebase, database } from "../firebaseConfig";
 import toast from "react-hot-toast";
 import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTranscript";
+
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/authContext";
+
 const Page = () => {
+  //Redirect if not logged in:
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  if (!user) {
+    router.replace("/");
+  }
+  /////////////
+
   const [selectedCallId, setSelectedCallId] = useState("");
   const [callIds, setCallIds] = useState<string[]>([]);
   const [callTranscripts, setCallTranscripts] = useState<string[]>([]);
@@ -13,7 +26,6 @@ const Page = () => {
     left: "0px",
     top: "0px",
   });
-
 
   useEffect(() => {
     const fetchCallIds = async () => {
@@ -64,7 +76,6 @@ const Page = () => {
         const newTranscript = snapshot.val();
         setCallTranscripts((prevTranscripts) => [...prevTranscripts, newTranscript]);
       });
-
     } catch (error) {
       console.error("Error fetching transcripts:", error);
     }
@@ -102,7 +113,6 @@ const Page = () => {
     }
   };
 
-  
   async function sendToChatgptAndPushInDatabase() {
     try {
       if (!selectedText) {
@@ -110,16 +120,9 @@ const Page = () => {
         return;
       }
       toast("Asking AI. pls wait");
-      sendTranscriptTo_Chatgpt4O_AndPushInDatabase(
-        selectedCallId,
-        selectedText,
-        "1"
-      );
+      sendTranscriptTo_Chatgpt4O_AndPushInDatabase(selectedCallId, selectedText, "1");
     } catch (err) {
-      console.log(
-        "error while writing data to room or chatgpt response is not a json:",
-        err
-      );
+      console.log("error while writing data to room or chatgpt response is not a json:", err);
     }
   }
 
@@ -130,55 +133,56 @@ const Page = () => {
     };
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      {popupVisible && (
-        <div
-          id="popup"
-          className={` absolute bg-green-500 z-40 px-3 py-2 rounded-md border-2 border-green-700 shadow-md cursor-pointer`}
-          style={{ left: popupPosition.left, top: popupPosition.top }}
-          onClick={sendToChatgptAndPushInDatabase}
-          onBlur={() => {
-            console.log("onblur");
-            setPopupVisible(false);
-          }}
-        >
-          <p className=" text-sm text-green-900">Answer this</p>
-        </div>
-      )}
-      <div className="max-w-4xl mx-auto bg-white shadow-md rounded-lg p-6">
-        <h1 className="text-2xl font-bold mb-4 text-gray-800">Moderator Page</h1>
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="callIdSelect">
-            Select Call ID
-          </label>
-          <select
-            id="callIdSelect"
-            value={selectedCallId}
-            onChange={(e) => setSelectedCallId(e.target.value)}
-            className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+  if (user)
+    return (
+      <div className="min-h-screen bg-gray-100 p-6">
+        {popupVisible && (
+          <div
+            id="popup"
+            className={` absolute bg-green-500 z-40 px-3 py-2 rounded-md border-2 border-green-700 shadow-md cursor-pointer`}
+            style={{ left: popupPosition.left, top: popupPosition.top }}
+            onClick={sendToChatgptAndPushInDatabase}
+            onBlur={() => {
+              console.log("onblur");
+              setPopupVisible(false);
+            }}
           >
-            {callIds.map((callId) => (
-              <option key={callId} value={callId}>
-                {callId}
-              </option>
-            ))}
-          </select>
-        </div>
+            <p className=" text-sm text-green-900">Answer this</p>
+          </div>
+        )}
+        <div className="max-w-4xl mx-auto bg-white shadow-md rounded-lg p-6">
+          <h1 className="text-2xl font-bold mb-4 text-gray-800">Moderator Page</h1>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="callIdSelect">
+              Select Call ID
+            </label>
+            <select
+              id="callIdSelect"
+              value={selectedCallId}
+              onChange={(e) => setSelectedCallId(e.target.value)}
+              className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            >
+              {callIds.map((callId) => (
+                <option key={callId} value={callId}>
+                  {callId}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className="mt-6">
-          <h2 className="text-lg font-bold mb-2 text-gray-800">Transcripts</h2>
-          <div className="bg-gray-50 p-4 rounded-lg shadow-inner overflow-y-auto h-[70vh]">
-            {callTranscripts.map((transcript, index) => (
-              <p key={index} className="text-gray-600 mb-2">
-                {transcript}
-              </p>
-            ))}
+          <div className="mt-6">
+            <h2 className="text-lg font-bold mb-2 text-gray-800">Transcripts</h2>
+            <div className="bg-gray-50 p-4 rounded-lg shadow-inner overflow-y-auto h-[70vh]">
+              {callTranscripts.map((transcript, index) => (
+                <p key={index} className="text-gray-600 mb-2">
+                  {transcript}
+                </p>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
 };
 
 export default Page;

@@ -2,7 +2,7 @@
 import Login from "@/components/Login";
 import React, { useEffect } from "react";
 import { useAuth } from "@/context/authContext";
-import { usePathname, useRouter } from "next/navigation";
+import {  useRouter } from "next/navigation";
 
 const Page = () => {
   const { user, loading } = useAuth();

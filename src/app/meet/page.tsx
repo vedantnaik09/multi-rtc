@@ -5,6 +5,8 @@ import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { FaMicrophoneAlt, FaVideoSlash, FaMicrophone, FaVideo, FaCopy } from "react-icons/fa";
 
+import { useAuth } from "@/context/authContext";
+
 type OfferAnswerPair = {
   offer: {
     sdp: string | null;
@@ -24,6 +26,15 @@ const Page = () => {
 };
 
 const PageContent = () => {
+  //Redirect if not logged in:
+  const { user} = useAuth();
+  const router = useRouter();
+
+  if (!user) {
+    router.replace("/");
+  }
+/////////////
+
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
@@ -623,7 +634,8 @@ const PageContent = () => {
       }
     }
   };
-
+  
+  if(user)
   return (
     <div className="mx-auto p-5 ">
       <h2 className="text-2xl font-semibold my-8">Tech-RTC</h2>

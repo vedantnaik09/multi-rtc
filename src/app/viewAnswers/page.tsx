@@ -3,7 +3,20 @@ import React, { useState, useEffect } from "react";
 import { firestore, firebase, database } from "../firebaseConfig";
 import toast from "react-hot-toast";
 import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTranscript";
+
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/authContext";
+
 const Page = () => {
+    //Redirect if not logged in:
+    const { user, loading } = useAuth();
+    const router = useRouter();
+  
+    if (!user) {
+      router.replace("/");
+    }
+    /////////////
+
   const [transcripts, setTranscripts] = useState<any[]>([]);
   const [selectedCallId, setSelectedCallId] = useState("");
   const [callIds, setCallIds] = useState<string[]>([]);
@@ -13,6 +26,7 @@ const Page = () => {
     left: "0px",
     top: "0px",
   });
+  
 
   useEffect(() => {
     const fetchCallIds = async () => {
@@ -113,6 +127,7 @@ const Page = () => {
     };
   }, []);
 
+  if(user)
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       {popupVisible && (
