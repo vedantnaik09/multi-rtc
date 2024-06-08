@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { FaMicrophoneAlt, FaVideoSlash, FaMicrophone, FaVideo, FaCopy } from "react-icons/fa";
 
 import { useAuth } from "@/context/authContext";
+import Login from "@/components/Login";
 
 type OfferAnswerPair = {
   offer: {
@@ -27,14 +28,13 @@ const Page = () => {
 };
 
 const TranscriptMeet = () => {
-    //Redirect if not logged in:
-    const { user, loading } = useAuth();
-    const router = useRouter();
-  
-    if (!user) {
-      router.replace("/");
-    }
-    /////////////
+  //Redirect if not logged in:
+  const { user} = useAuth();
+
+  if (!user) {
+    return(<Login/>)
+  }
+/////////////
 
   const searchParams = useSearchParams();
   const pathname = usePathname();

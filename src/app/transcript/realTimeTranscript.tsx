@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import { showWarningToast } from "@/utils/toasts";
 import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTranscript";
 
-const partialTranscriptPauseThreshold = 10;
+const partialTranscriptPauseThreshold = 20;
 
 const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
   const [status, setStatus] = useState<"RECORDING" | "PAUSED" | "STOPPED">("STOPPED");

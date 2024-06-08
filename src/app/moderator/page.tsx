@@ -6,16 +6,16 @@ import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTransc
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/authContext";
+import Login from "@/components/Login";
 
 const Page = () => {
   //Redirect if not logged in:
-  const { user, loading } = useAuth();
-  const router = useRouter();
+  const { user} = useAuth();
 
   if (!user) {
-    router.replace("/");
+    return(<Login/>)
   }
-  /////////////
+/////////////
 
   const [selectedCallId, setSelectedCallId] = useState("");
   const [callIds, setCallIds] = useState<string[]>([]);
