@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import RecordRTC, { StereoAudioRecorder } from "recordrtc";
 import { child, get, push, ref } from "firebase/database";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { database } from "../firebaseConfig";
+import { database, storage } from "../firebaseConfig";
 import toast from "react-hot-toast";
 import { showWarningToast } from "@/utils/toasts";
 import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTranscript";
@@ -178,11 +178,42 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
             console.log("AUDIBLOB : ", audioBlob);
             const url = URL.createObjectURL(audioBlob);
             console.log("URL IS ", url);
-        
+            console.log("STOPPING THE RECORFDINGG")
             const now = new Date();
             const day = String(now.getDate()).padStart(2, "0");
             const month = String(now.getMonth() + 1).padStart(2, "0"); // January is 0!
             const year = now.getFullYear();
+
+            const dateString = `${day}-${month}-${year}`;
+
+            const audioFileRef = storageRef(
+              storage,
+              `audio/${dateString}/${callId}.mp3`
+            );
+            uploadBytes(audioFileRef, audioBlob).then((snapshot) => {
+              console.log("Uploaded a blob or file!", snapshot);
+            });
+            getDownloadURL(audioFileRef)
+              .then((url) => {
+                if (url) {
+                  // updateRoomData("audioUrl", url);
+                }
+              })
+              .catch((error) => {
+                console.log("Error while uploading audio file ", error);
+              });
+            // setAudioURL(url);
+            // Create a link and set the URL as the href
+            const a = document.createElement("a");
+            a.href = url;
+            console.log("DOWNLOADING");
+            a.download = callId; // Name of the downloaded file
+            document.body.appendChild(a);
+            a.click();
+
+            // Clean up
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
           };
         
           recorder.start();
@@ -243,11 +274,14 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
         socket.current = null;
       }
       if (recorder) {
-        recorder.pauseRecording();
+        recorder.stopRecording();
         setRecorder(null);
       }
+      if (mediaRecorderforFile.current) {
+        mediaRecorderforFile.current.stop(); // Stop the MediaRecorder instance
+      }
       setStatus("STOPPED");
-      showWarningToast("recording paused");
+      showWarningToast("Recording stopped");
     }
   };
 
