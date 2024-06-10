@@ -615,12 +615,12 @@ const PageContent = () => {
           if (hangedUpUser > myIndex!) {
             setRemoteVideoRefs((prevRefs) => {
               const newRefs = [...prevRefs];
-              newRefs[hangedUpUser-1] = null;
+              newRefs[hangedUpUser - 1] = null;
               return newRefs;
             });
             setRemoteStreams((prevRefs) => {
               const newRefs = [...prevRefs];
-              newRefs[hangedUpUser-1] = null;
+              newRefs[hangedUpUser - 1] = null;
               return newRefs;
             });
           }
@@ -643,6 +643,40 @@ const PageContent = () => {
       }
     );
   }, [callId, myIndex]);
+
+  useEffect(() => {
+    const handleIceConnectionStateChange = (pc: RTCPeerConnection, index: number) => {
+      if (pc.connectionState === "disconnected") {
+        console.log(`PC at index ${index} has iceConnectionState as disconnected`);
+
+        setRemoteVideoRefs((prevRefs) => {
+          const newRefs = [...prevRefs];
+          newRefs[index] = null;
+          return newRefs;
+        });
+        setRemoteStreams((prevRefs) => {
+          const newRefs = [...prevRefs];
+          newRefs[index] = null;
+          return newRefs;
+        });
+      }
+    };
+
+    const handleIceConnectionStateChangeEvent = (event: Event, index: number) => {
+      const pc = event.currentTarget as RTCPeerConnection;
+      handleIceConnectionStateChange(pc, index);
+    };
+
+    pcs.forEach((pc, index) => {
+      pc.addEventListener("connectionstatechange", (event) => handleIceConnectionStateChangeEvent(event, index));
+    });
+
+    return () => {
+      pcs.forEach((pc, index) => {
+        pc.removeEventListener("connectionstatechange", (event) => handleIceConnectionStateChangeEvent(event, index));
+      });
+    };
+  }, [pcs]);
 
   useEffect(() => {
     const newRemoteVideoRefs = remoteStreams.map(() => React.createRef<HTMLVideoElement>());
@@ -722,9 +756,9 @@ const PageContent = () => {
             {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
           </div>
           {remoteStreams.map((_, index) => (
-            <div key={index} className={`bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full ${remoteStreams[index]?'':'hidden'}`}>
+            <div key={index} className={`bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full ${remoteStreams[index] ? "" : "hidden"}`}>
               <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
-              {isClient  && (
+              {isClient && (
                 <video
                   ref={remoteVideoRefs[index]}
                   autoPlay
