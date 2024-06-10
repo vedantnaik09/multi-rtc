@@ -21,7 +21,8 @@ export async function POST(req: Request) {
   };
   const role = humanMessage?.role;
   let YOE = humanMessage?.experience || "moderate";
-
+  // console.log("human message is ",humanMessage)
+  // console.log("prompt is ",prompt)
   const model = new ChatOpenAI({
     // modelName: "gpt-4-0613",
     modelName: "gpt-4o",

@@ -28,13 +28,9 @@ const Page = () => {
 };
 
 const TranscriptMeet = () => {
-  //Redirect if not logged in:
   const { user} = useAuth();
 
-  if (!user) {
-    return(<Login/>)
-  }
-/////////////
+
 
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -754,6 +750,10 @@ const TranscriptMeet = () => {
       }
     }
   };
+  
+  if (!user) {
+    return(<Login/>)
+  }
   
   if(user)
   return (

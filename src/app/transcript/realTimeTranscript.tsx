@@ -295,7 +295,7 @@ const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: 
         <input
           placeholder="Role"
           onChange={(e) => setRole(e.target.value)}
-          className="p-2 border text-center border-gray-300 rounded-md w-[300px] max-w-full"
+          className="p-2 placeholder:text-gray-300 border text-center border-gray-300 rounded-md w-[300px] max-w-full"
         />
       </div>
       <div className="md:flex-row flex-col flex gap-2 mx-auto justify-center items-center">

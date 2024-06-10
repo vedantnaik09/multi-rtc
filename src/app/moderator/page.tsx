@@ -9,13 +9,7 @@ import { useAuth } from "@/context/authContext";
 import Login from "@/components/Login";
 
 const Page = () => {
-  //Redirect if not logged in:
   const { user} = useAuth();
-
-  if (!user) {
-    return(<Login/>)
-  }
-/////////////
 
   const [selectedCallId, setSelectedCallId] = useState("");
   const [callIds, setCallIds] = useState<string[]>([]);
@@ -132,6 +126,10 @@ const Page = () => {
       document.removeEventListener("mouseup", handleTextSelection);
     };
   }, []);
+  
+  if (!user) {
+    return(<Login/>)
+  }
 
   if (user)
     return (

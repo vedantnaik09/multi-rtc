@@ -27,13 +27,7 @@ const Page = () => {
 };
 
 const PageContent = () => {
-  //Redirect if not logged in:
   const { user } = useAuth();
-
-  if (!user) {
-    return <Login />;
-  }
-  /////////////
 
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -735,6 +729,10 @@ const PageContent = () => {
       }
     }
   };
+  
+  if (!user) {
+    return <Login />;
+  }
 
   if (user)
     return (
