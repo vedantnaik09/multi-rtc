@@ -28,12 +28,12 @@ const Page = () => {
 
 const PageContent = () => {
   //Redirect if not logged in:
-  const { user} = useAuth();
+  const { user } = useAuth();
 
   if (!user) {
-    return(<Login/>)
+    return <Login />;
   }
-/////////////
+  /////////////
 
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -41,14 +41,17 @@ const PageContent = () => {
 
   const [isClient, setIsClient] = useState(false);
   const [inCall, setInCall] = useState(false);
+  const [callId, setCallId] = useState<string>();
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
   const callButtonRef = useRef<HTMLButtonElement>(null);
   const callInputRef = useRef<HTMLInputElement>(null);
   const answerButtonRef = useRef<HTMLButtonElement>(null);
   const hangupButtonRef = useRef<HTMLButtonElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
-  const [remoteVideoRefs, setRemoteVideoRefs] = useState<React.RefObject<HTMLVideoElement>[]>([]);
-  const [remoteStreams, setRemoteStreams] = useState<MediaStream[]>([]);
+  const [pcs, setPcs] = useState<RTCPeerConnection[]>([]);
+  const [myIndex, setMyIndex] = useState<number>();
+  const [remoteVideoRefs, setRemoteVideoRefs] = useState<(React.RefObject<HTMLVideoElement> | null)[]>([]);
+  const [remoteStreams, setRemoteStreams] = useState<(MediaStream | null)[]>([]);
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [accessGiven, setAccessGiven] = useState(false);
@@ -99,9 +102,12 @@ const PageContent = () => {
       if (callInputRef.current) {
         callInputRef.current.value = callDoc.id;
       }
+      setCallId(callDoc.id);
       replace(`${pathname}?id=${callDoc.id}`);
       await callDoc.set({ loading: false });
       await callDoc.set({ connectedUsers: 1 });
+
+      setMyIndex(0);
 
       let lengthUsers: number;
       let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
@@ -211,7 +217,7 @@ const PageContent = () => {
             indexOfCurrentUsers: indexOfCurrentUsers,
           });
           console.log(pc);
-
+          setPcs((prevPcs) => [...prevPcs, pc]);
           await signalDoc.set({ signal: 0 });
         }
       };
@@ -237,7 +243,7 @@ const PageContent = () => {
         replace(`${pathname}?id=${callInputRef.current.value}`);
       }
       const callDocHost = firestore.collection("calls").doc(callId);
-
+      setCallId(callId);
       const lengthUsers = (await callDocHost.get()).data()?.connectedUsers;
       const signalDoc = callDocHost.collection("signal").doc(`signal${lengthUsers}`);
 
@@ -246,7 +252,7 @@ const PageContent = () => {
       let indexOfOtherConnectedCandidates = callDocHost.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
 
       const myIndex = lengthUsers + 1;
-
+      setMyIndex(lengthUsers);
       let pc: RTCPeerConnection;
 
       signalDoc.onSnapshot(
@@ -336,7 +342,7 @@ const PageContent = () => {
                   console.error("Error listening for offerCandidates changes:", error);
                 }
               );
-
+              setPcs((prevPcs) => [...prevPcs, pc]);
               await signalDoc.update({ signal: 4 });
             }
           }
@@ -448,6 +454,7 @@ const PageContent = () => {
                       console.error("Error getting candidate collection:", error);
                     }
                   );
+                  setPcs((prevPcs) => [...prevPcs, pc]);
                   await signalDoc.update({ signal: 3 });
                 }
               }
@@ -559,7 +566,7 @@ const PageContent = () => {
                   console.error("Error listening for offerCandidates changes:", error);
                 }
               );
-
+              setPcs((prevPcs) => [...prevPcs, pc]);
               await signalDoc.update({ signal: 4 });
             }
           }
@@ -576,6 +583,66 @@ const PageContent = () => {
       answerButtonRef.current.onclick = handleAnswerButtonClick;
     }
   }, []);
+  const hangup = async () => {
+    console.log("The current pcs are: ", pcs);
+    console.log(myIndex);
+    const callDoc = firestore.collection("calls").doc(callId);
+    let hangupDoc = callDoc.collection("hangup").doc(`hangups`);
+    await hangupDoc.set({ hangup: myIndex });
+
+    pcs.forEach((pc) => {
+      pc.close();
+    });
+    setRemoteStreams([]);
+    setRemoteVideoRefs([]);
+    setPcs([]);
+
+    // setRemoteVideoRefs(prevRefs => {
+    //   const newRefs = [...prevRefs];
+    //   newRefs[2] = null;
+    //   return newRefs;
+    // });
+  };
+
+  useEffect(() => {
+    const callDoc = firestore.collection("calls").doc(callId);
+    let hangupCollection = callDoc.collection("hangup");
+    hangupCollection.onSnapshot(
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          console.log(change.doc.data().hangup);
+          let hangedUpUser = change.doc.data().hangup;
+          if (hangedUpUser > myIndex!) {
+            setRemoteVideoRefs((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser-1] = null;
+              return newRefs;
+            });
+            setRemoteStreams((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser-1] = null;
+              return newRefs;
+            });
+          }
+          if (hangedUpUser < myIndex!) {
+            setRemoteVideoRefs((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser] = null;
+              return newRefs;
+            });
+            setRemoteStreams((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser] = null;
+              return newRefs;
+            });
+          }
+        });
+      },
+      (error) => {
+        console.error("Error listening for changes: ", error);
+      }
+    );
+  }, [callId, myIndex]);
 
   useEffect(() => {
     const newRemoteVideoRefs = remoteStreams.map(() => React.createRef<HTMLVideoElement>());
@@ -585,7 +652,7 @@ const PageContent = () => {
 
   useEffect(() => {
     remoteVideoRefs.forEach(async (ref, index) => {
-      if (ref.current && remoteStreams[index]) {
+      if (ref?.current && remoteStreams[index]) {
         ref.current.srcObject = remoteStreams[index];
       }
     });
@@ -634,108 +701,109 @@ const PageContent = () => {
       }
     }
   };
-  
-  if(user)
-  return (
-    <div className="mx-auto p-5 ">
-      <h2 className="text-2xl font-semibold my-8">Multi-RTC</h2>
-      <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
-        <div className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
-          <h3 className="text-xl font-medium mb-2">Local Stream</h3>
-          {isClient && (
-            <video
-              id="webcamVideo"
-              ref={webcamVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "
-            ></video>
-          )}
-          {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
-        </div>
-        {remoteStreams.map((_, index) => (
-          <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
-            <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
+
+  if (user)
+    return (
+      <div className="mx-auto p-5 ">
+        <h2 className="text-2xl font-semibold my-8">Multi-RTC</h2>
+        <div className="flex mx-auto justify-center w-full gap-2 flex-wrap">
+          <div className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
+            <h3 className="text-xl font-medium mb-2">Local Stream</h3>
             {isClient && (
               <video
-                ref={remoteVideoRefs[index]}
+                id="webcamVideo"
+                ref={webcamVideoRef}
                 autoPlay
                 playsInline
+                muted
                 className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "
               ></video>
             )}
             {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
           </div>
-        ))}
-      </div>
-      {accessGiven && (
-        <div className="mt-5 flex justify-center gap-2">
-          <button
-            onClick={handleMicToggle}
-            className={`px-4 py-2 rounded-md flex items-center gap-2 ${micEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
-          >
-            {micEnabled ? <FaMicrophoneAlt /> : <FaMicrophone />}
-            {micEnabled ? "Disable Mic" : "Enable Mic"}
-          </button>
-          <button
-            onClick={handleVideoToggle}
-            className={`px-4 py-2 rounded-md flex items-center gap-2 ${videoEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
-          >
-            {videoEnabled ? <FaVideoSlash /> : <FaVideo />}
-            {videoEnabled ? "Disable Video" : "Enable Video"}
-          </button>
-        </div>
-      )}
-      <h2 className="text-2xl font-semibold my-4">1. Start your Webcam</h2>
-
-      <button ref={webcamButtonRef} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
-        Start webcam
-      </button>
-
-      <h2 className="text-2xl font-semibold mt-8 mb-4">2. Create a new Call</h2>
-      <button
-        ref={callButtonRef}
-        disabled
-        className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Create Call (offer)
-      </button>
-
-      <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
-      <p className="mb-2">Answer the call from a different browser window or device</p>
-      <div className="md:flex-row flex flex-col w-full mx-auto gap-2 justify-center items-center">
-        <input ref={callInputRef} className="p-2 border border-gray-300 rounded-md w-[400px] max-w-full" />
-        <div className="flex gap-2">
-          <button
-            ref={answerButtonRef}
-            disabled
-            className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Answer
-          </button>
-          <button
-            disabled={!inCall}
-            onClick={copyLink}
-            className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md"
-          >
-            <div onClick={copyLink} className={`${inCall ? "" : "cursor-not-allowed"} px-2 py-1 text-white rounded-md `} title="Copy Link">
-              <FaCopy />
+          {remoteStreams.map((_, index) => (
+            <div key={index} className={`bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full ${remoteStreams[index]?'':'hidden'}`}>
+              <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
+              {isClient  && (
+                <video
+                  ref={remoteVideoRefs[index]}
+                  autoPlay
+                  playsInline
+                  className="max-sm:w-[90%] w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "
+                ></video>
+              )}
+              {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
             </div>
-          </button>
+          ))}
         </div>
-      </div>
+        {accessGiven && (
+          <div className="mt-5 flex justify-center gap-2">
+            <button
+              onClick={handleMicToggle}
+              className={`px-4 py-2 rounded-md flex items-center gap-2 ${micEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
+            >
+              {micEnabled ? <FaMicrophoneAlt /> : <FaMicrophone />}
+              {micEnabled ? "Disable Mic" : "Enable Mic"}
+            </button>
+            <button
+              onClick={handleVideoToggle}
+              className={`px-4 py-2 rounded-md flex items-center gap-2 ${videoEnabled ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}
+            >
+              {videoEnabled ? <FaVideoSlash /> : <FaVideo />}
+              {videoEnabled ? "Disable Video" : "Enable Video"}
+            </button>
+          </div>
+        )}
+        <h2 className="text-2xl font-semibold my-4">1. Start your Webcam</h2>
 
-      <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
-      <button
-        ref={hangupButtonRef}
-        disabled
-        className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed mb-5"
-      >
-        Hangup
-      </button>
-    </div>
-  );
+        <button ref={webcamButtonRef} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+          Start webcam
+        </button>
+
+        <h2 className="text-2xl font-semibold mt-8 mb-4">2. Create a new Call</h2>
+        <button
+          ref={callButtonRef}
+          disabled
+          className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Create Call (offer)
+        </button>
+
+        <h2 className="text-2xl font-semibold mt-8 mb-4">3. Join a Call</h2>
+        <p className="mb-2">Answer the call from a different browser window or device</p>
+        <div className="md:flex-row flex flex-col w-full mx-auto gap-2 justify-center items-center">
+          <input ref={callInputRef} className="p-2 border border-gray-300 rounded-md w-[400px] max-w-full" />
+          <div className="flex gap-2">
+            <button
+              ref={answerButtonRef}
+              disabled
+              className="px-4 py-2 w- bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Answer
+            </button>
+            <button
+              disabled={!inCall}
+              onClick={copyLink}
+              className="disabled:cursor-not-allowed disabled:bg-green-300 px-2 py-1 bg-green-500 text-white rounded-md"
+            >
+              <div onClick={copyLink} className={`${inCall ? "" : "cursor-not-allowed"} px-2 py-1 text-white rounded-md `} title="Copy Link">
+                <FaCopy />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
+        <button
+          ref={hangupButtonRef}
+          disabled={!inCall}
+          onClick={hangup}
+          className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed mb-5"
+        >
+          Hangup
+        </button>
+      </div>
+    );
 };
 
 export default Page;

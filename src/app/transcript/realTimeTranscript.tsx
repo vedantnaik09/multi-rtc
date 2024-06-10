@@ -10,7 +10,7 @@ import { sendTranscriptTo_Chatgpt4O_AndPushInDatabase } from "@/utils/sendTransc
 
 const partialTranscriptPauseThreshold = 20;
 
-const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[] }> = ({ callId, remoteStreams }) => {
+const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: (MediaStream | null)[] }> = ({ callId, remoteStreams }) => {
   const [status, setStatus] = useState<"RECORDING" | "PAUSED" | "STOPPED">("STOPPED");
   const [vocabSwitch, setVocabSwitch] = useState<"ON" | "OFF">("ON");
   const [stream, setStream] = useState<MediaStream | undefined>();
@@ -92,7 +92,7 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
               finalTexts[`${currentPauseTime.current}-${res.audio_start}`] = `\n${res.text}`;
               console.log("TEXT AFTER LONG PAUSE IS : \n", res.text, "\n SEDNGING TO CHATGPT");
               updateTranscriptInDatabase(res.text);
-              sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId, res.text, "1");
+              sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId!, res.text, "1");
               pauseDetected.current = false;
             } else {
               finalTexts[`${currentPauseTime.current}-${res.audio_start}`] = res.text;
@@ -137,48 +137,50 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
         };
         newSocket.onopen = async () => {
           const audioContext = new AudioContext();
-        
+
           // Get local audio stream
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           const audioIn_01 = audioContext.createMediaStreamSource(audioStream);
           console.log("Local audio stream tracks:", audioStream.getTracks());
-        
+
           // Get remote audio streams
           const remoteAudioSources: MediaStreamAudioSourceNode[] = [];
           remoteStreams.forEach((remoteStream) => {
-            const audioIn = audioContext.createMediaStreamSource(remoteStream);
-            remoteAudioSources.push(audioIn);
-            console.log("Tracks for remote stream:", remoteStream.getTracks());
+            if (remoteStream) {
+              const audioIn = audioContext.createMediaStreamSource(remoteStream);
+              remoteAudioSources.push(audioIn);
+              console.log("Tracks for remote stream:", remoteStream.getTracks());
+            }
           });
-        
+
           // Create a destination to combine all audio sources
           const dest = audioContext.createMediaStreamDestination();
           audioIn_01.connect(dest);
           remoteAudioSources.forEach((source) => source.connect(dest));
-        
+
           toast.dismiss();
           toast.success("Recording started");
-        
+
           setStatus("RECORDING");
-        
+
           const combinedStream = dest.stream;
           setStream(combinedStream);
           console.log("Combined stream tracks:", combinedStream.getTracks());
-        
+
           let recorder = new MediaRecorder(combinedStream);
-        
+
           let audioChunks: BlobPart[] | undefined = [];
           recorder.ondataavailable = (e) => {
             audioChunks.push(e.data);
           };
-        
+
           recorder.onstop = () => {
             // this downloads as .ogx in firefox and .mp3 in chrome
             const audioBlob = new Blob(audioChunks, { type: "audio/mp3" });
             console.log("AUDIBLOB : ", audioBlob);
             const url = URL.createObjectURL(audioBlob);
             console.log("URL IS ", url);
-            console.log("STOPPING THE RECORFDINGG")
+            console.log("STOPPING THE RECORFDINGG");
             const now = new Date();
             const day = String(now.getDate()).padStart(2, "0");
             const month = String(now.getMonth() + 1).padStart(2, "0"); // January is 0!
@@ -186,10 +188,7 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
 
             const dateString = `${day}-${month}-${year}`;
 
-            const audioFileRef = storageRef(
-              storage,
-              `audio/${dateString}/${callId}.mp3`
-            );
+            const audioFileRef = storageRef(storage, `audio/${dateString}/${callId}.mp3`);
             uploadBytes(audioFileRef, audioBlob).then((snapshot) => {
               console.log("Uploaded a blob or file!", snapshot);
             });
@@ -207,7 +206,7 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
             const a = document.createElement("a");
             a.href = url;
             console.log("DOWNLOADING");
-            a.download = callId; // Name of the downloaded file
+            a.download = callId!; // Name of the downloaded file
             document.body.appendChild(a);
             a.click();
 
@@ -215,10 +214,10 @@ const RealTimeTranscript: React.FC<{ callId: string; remoteStreams: MediaStream[
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
           };
-        
+
           recorder.start();
           mediaRecorderforFile.current = recorder;
-        
+
           const localRecorder = new RecordRTC(combinedStream, {
             type: "audio",
             mimeType: "audio/webm;codecs=pcm", // endpoint requires 16bit PCM audio

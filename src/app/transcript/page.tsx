@@ -44,7 +44,7 @@ const TranscriptMeet = () => {
 
   const [isClient, setIsClient] = useState(false);
   const [inCall, setInCall] = useState(false);
-  const [callId, setCallId] = useState("");
+  const [callId, setCallId] = useState<string>();
   const [isHost, setIsHost] = useState(false);
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
   const callButtonRef = useRef<HTMLButtonElement>(null);
@@ -52,8 +52,10 @@ const TranscriptMeet = () => {
   const answerButtonRef = useRef<HTMLButtonElement>(null);
   const hangupButtonRef = useRef<HTMLButtonElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
-  const [remoteVideoRefs, setRemoteVideoRefs] = useState<React.RefObject<HTMLVideoElement>[]>([]);
-  const [remoteStreams, setRemoteStreams] = useState<MediaStream[]>([]);
+  const [pcs, setPcs] = useState<RTCPeerConnection[]>([]);
+  const [myIndex, setMyIndex] = useState<number>();
+  const [remoteVideoRefs, setRemoteVideoRefs] = useState<(React.RefObject<HTMLVideoElement> | null)[]>([]);
+  const [remoteStreams, setRemoteStreams] = useState<(MediaStream | null)[]>([]);
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [accessGiven, setAccessGiven] = useState(false);
@@ -101,7 +103,7 @@ const TranscriptMeet = () => {
 
     const handleCallButtonClick = async () => {
       setInCall(true);
-
+      if (hangupButtonRef.current) hangupButtonRef.current.disabled = false;
       const callDoc = firestore.collection("calls").doc();
       let signalDoc = callDoc.collection("signal").doc(`signal1`);
       let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
@@ -114,6 +116,8 @@ const TranscriptMeet = () => {
       }
       await callDoc.set({ loading: false });
       await callDoc.set({ connectedUsers: 1 });
+
+      setMyIndex(0);
 
       let lengthUsers: number;
       let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
@@ -226,6 +230,7 @@ const TranscriptMeet = () => {
           });
           console.log(pc);
 
+          setPcs((prevPcs) => [...prevPcs, pc]);
           await signalDoc.set({ signal: 0 });
         }
       };
@@ -245,6 +250,7 @@ const TranscriptMeet = () => {
 
     const handleAnswerButtonClick = async () => {
       setInCall(true);
+      if (hangupButtonRef.current) hangupButtonRef.current.disabled = false;
       let callId;
       if (callInputRef.current) {
         callId = callInputRef.current.value;
@@ -262,6 +268,7 @@ const TranscriptMeet = () => {
       let indexOfOtherConnectedCandidates = callDocHost.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
 
       const myIndex = lengthUsers + 1;
+      setMyIndex(lengthUsers);
 
       let pc: RTCPeerConnection;
 
@@ -352,7 +359,7 @@ const TranscriptMeet = () => {
                   console.error("Error listening for offerCandidates changes:", error);
                 }
               );
-
+              setPcs((prevPcs) => [...prevPcs, pc]);
               await signalDoc.update({ signal: 4 });
             }
           }
@@ -464,6 +471,7 @@ const TranscriptMeet = () => {
                       console.error("Error getting candidate collection:", error);
                     }
                   );
+                  setPcs((prevPcs) => [...prevPcs, pc]);
                   await signalDoc.update({ signal: 3 });
                 }
               }
@@ -575,7 +583,7 @@ const TranscriptMeet = () => {
                   console.error("Error listening for offerCandidates changes:", error);
                 }
               );
-
+              setPcs((prevPcs) => [...prevPcs, pc]);
               await signalDoc.update({ signal: 4 });
             }
           }
@@ -593,6 +601,67 @@ const TranscriptMeet = () => {
     }
   }, []);
 
+  const hangup = async () => {
+    console.log("The current pcs are: ", pcs);
+    console.log(myIndex);
+    const callDoc = firestore.collection("calls").doc(callId);
+    let hangupDoc = callDoc.collection("hangup").doc(`hangups`);
+    await hangupDoc.set({ hangup: myIndex });
+
+    pcs.forEach((pc) => {
+      pc.close();
+    });
+    setRemoteStreams([]);
+    setRemoteVideoRefs([]);
+    setPcs([]);
+
+    // setRemoteVideoRefs(prevRefs => {
+    //   const newRefs = [...prevRefs];
+    //   newRefs[2] = null;
+    //   return newRefs;
+    // });
+  };
+
+  useEffect(() => {
+    const callDoc = firestore.collection("calls").doc(callId);
+    let hangupCollection = callDoc.collection("hangup");
+    hangupCollection.onSnapshot(
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          console.log(change.doc.data().hangup);
+          let hangedUpUser = change.doc.data().hangup;
+          if (hangedUpUser > myIndex!) {
+            setRemoteVideoRefs((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser-1] = null;
+              return newRefs;
+            });
+            setRemoteStreams((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser-1] = null;
+              return newRefs;
+            });
+          }
+          if (hangedUpUser < myIndex!) {
+            setRemoteVideoRefs((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser] = null;
+              return newRefs;
+            });
+            setRemoteStreams((prevRefs) => {
+              const newRefs = [...prevRefs];
+              newRefs[hangedUpUser] = null;
+              return newRefs;
+            });
+          }
+        });
+      },
+      (error) => {
+        console.error("Error listening for changes: ", error);
+      }
+    );
+  }, [callId, myIndex]);
+
   useEffect(() => {
     const newRemoteVideoRefs = remoteStreams.map(() => React.createRef<HTMLVideoElement>());
     setRemoteVideoRefs(newRemoteVideoRefs);
@@ -601,7 +670,7 @@ const TranscriptMeet = () => {
 
   useEffect(() => {
     remoteVideoRefs.forEach(async (ref, index) => {
-      if (ref.current && remoteStreams[index]) {
+      if (ref?.current && remoteStreams[index]) {
         ref.current.srcObject = remoteStreams[index];
       }
     });
@@ -672,7 +741,7 @@ const TranscriptMeet = () => {
           {!isClient && <div className="max-sm:w-[90%] max-lg:w-full w-[500px] aspect-video mx-auto rounded-md bg-[#202124] "></div>}
         </div>
         {remoteStreams.map((_, index) => (
-          <div key={index} className="bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full">
+          <div key={index} className={`bg-gray-100 p-4 rounded-lg shadow-md max-w-[33%] min-w-[500px] max-sm:w-full ${remoteStreams[index]?'':'hidden'}`}>
             <h3 className="text-xl font-medium mb-2">Remote Stream {index + 1}</h3>
             {isClient && (
               <video
@@ -746,7 +815,8 @@ const TranscriptMeet = () => {
       <h2 className="text-2xl font-semibold mt-8 mb-4">4. Hangup</h2>
       <button
         ref={hangupButtonRef}
-        disabled
+        disabled={!inCall}
+        onClick={hangup}
         className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed mb-5"
       >
         Hangup
