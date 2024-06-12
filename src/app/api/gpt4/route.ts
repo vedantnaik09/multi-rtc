@@ -4,18 +4,25 @@ import { ChatOpenAI } from "@langchain/openai";
 export const runtime = "edge";
 
 type Message = {
-  msgId: string;
-  roomId: string;
-  content: string;
-  yoe: string;
+  itemFound: boolean;
+  type: string;
+  question: string;
+  experience: string;
+  role: string;
 };
 
 export async function POST(req: Request) {
   const humanMessage: Message = await req.json();
-  const interviewTranscript = humanMessage?.content;
-  // const roomId = humanMessage?.roomId;
-  let YOE = humanMessage?.yoe || "moderate";
-
+  const prompt = {
+    itemFound: humanMessage.itemFound,
+    type: humanMessage.type,
+    question: humanMessage.question,
+    yoe: humanMessage.experience,
+  };
+  const role = humanMessage?.role;
+  let YOE = humanMessage?.experience || "moderate";
+  // console.log("human message is ",humanMessage)
+  // console.log("prompt is ",prompt)
   const model = new ChatOpenAI({
     // modelName: "gpt-4-0613",
     modelName: "gpt-4o",
@@ -25,18 +32,18 @@ export async function POST(req: Request) {
 
   const messages = [
     new SystemMessage(
-      `
-      Examine the provided interview transcript between an interviewer and a candidate. Your task is to identify any questions, scenarios, or coding challenges posed by the interviewer, including incomplete or fragmented questions. Once identified, you should generate an answer in a casual, conversational tone appropriate for an interviewee with ${YOE} years of experience.
+      `Consider an interview is going on for role ${role} between interviewer and candidate with ${YOE} yrs of experience. You'll get the following type of prompt:
 
-Since the text you'll be getting is from a transcription of a meeting, there might be grammatical errors or spelling mistakes. Your main task is to detect if there is any possible question, scenario, or coding challenge first, including incomplete or fragmented questions. If any such items exist, do the following:
-Respond with a JSON structure as follows:
+{"itemFound": true, "type": "question"/"scenario"/"coding challenge", "question": "the item presented by the interviewer", "experience":"${YOE} years of experience"}
 
-If a question, scenario, or coding challenge is found, use this format: {"itemFound": true, "type": "question"/"scenario"/"coding challenge", "question": "the item presented by the interviewer", "answer": "your casual, conversational response suitable for someone with ${YOE} years of experience"}.
-If no such items are found, use this format: {"itemFound": false}.
-Please specify in the type field whether the identified item is a "question", "scenario", or "coding challenge". Here's the transcript:
-      `
+You should generate an answer in a casual, conversational tone appropriate for an interviewee with ${YOE} years of experience. Respond with a JSON structure as follows:
+{"itemFound": true, "type":${prompt.type}, "question":${prompt.question}, "experience":${prompt.yoe},"answer": "your casual, conversational response suitable for someone with ${YOE} years of experience should come here"}
+itemFound should be always true, if in the given prompt it is true.
+Here is the prompt:
+
+ Note: Only include the JSON in your response.`
     ),
-    new HumanMessage("TRASNCRIPT: " + interviewTranscript),
+    new HumanMessage("Prompt: " + prompt),
   ];
 
   const response = await model.invoke(messages);

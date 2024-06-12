@@ -35,7 +35,6 @@ const PageContent = () => {
 
   const [isClient, setIsClient] = useState(false);
   const [inCall, setInCall] = useState(false);
-  const [connected, setConnected] = useState(false);
   const [callId, setCallId] = useState<string>();
   const webcamButtonRef = useRef<HTMLButtonElement>(null);
   const callButtonRef = useRef<HTMLButtonElement>(null);
@@ -51,532 +50,11 @@ const PageContent = () => {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [accessGiven, setAccessGiven] = useState(false);
 
-  const hasRun = useRef(false);
-
   const [stream, setStream] = useState<MediaStream | null>(null);
   let localStream: MediaStream | null;
-  let servers: RTCConfiguration | undefined;
-
-  const startWebcam = async () => {
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      setStream(localStream);
-      setAccessGiven(true);
-      if (webcamVideoRef.current && localStream) {
-        webcamVideoRef.current.srcObject = localStream;
-      }
-    } catch (error) {
-      console.error("Error accessing webcam:", error);
-    }
-
-    if (callButtonRef.current) callButtonRef.current.disabled = false;
-    if (answerButtonRef.current) answerButtonRef.current.disabled = false;
-    if (webcamButtonRef.current) webcamButtonRef.current.disabled = true;
-  };
-
-  const handleCallButtonClick = async () => {
-    setInCall(true);
-    const callDoc = firestore.collection("calls").doc();
-    let signalDoc = callDoc.collection("signal").doc(`signal1`);
-    let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
-    await indexOfOtherConnectedCandidates.set({ indexOfCurrentUsers: [] });
-    if (callInputRef.current) {
-      callInputRef.current.value = callDoc.id;
-    }
-    setCallId(callDoc.id);
-    replace(`${pathname}?id=${callDoc.id}`);
-    await callDoc.set({ loading: false });
-    await callDoc.set({ connectedUsers: 1 });
-
-    setMyIndex(0);
-    let userListCollection = callDoc.collection("currentUsers").doc(`currentUsers`);
-    await userListCollection.set({ userList: [0] });
-    await userListCollection.set({ host: 0 });
-
-    let lengthUsers: number;
-    let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
-    let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
-    await signalDoc.set({ signal: 0 });
-    let pc: RTCPeerConnection;
-    const handleSignalChange = async (signal: number) => {
-      if (signal === 0) {
-        pc = await new RTCPeerConnection(servers);
-
-        await localStream?.getTracks().forEach((track) => {
-          pc.addTrack(track, localStream as MediaStream);
-        });
-
-        let onTrackExecuted = false;
-
-        pc.ontrack = async (event) => {
-          if (!onTrackExecuted) {
-            onTrackExecuted = true;
-            const remoteStream = new MediaStream();
-            await event.streams[0].getTracks().forEach((track) => {
-              remoteStream.addTrack(track);
-            });
-            console.log("Remote stream reflected");
-            await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
-          }
-        };
-
-        lengthUsers = (await callDoc.get()).data()?.connectedUsers;
-        await callDoc.update({ loading: true });
-        offerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
-        answerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
-        pc.onicecandidate = async (event) => {
-          event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
-        };
-
-        const offerDescription = await pc.createOffer();
-        await pc.setLocalDescription(offerDescription);
-
-        let offer = {
-          sdp: offerDescription.sdp as string,
-          type: offerDescription.type,
-        };
-
-        let offerAnswerPair: OfferAnswerPair = {
-          offer: offer,
-          answer: null,
-        };
-
-        const currentPairs: OfferAnswerPair[] = (await callDoc.get()).data()?.offerAnswerPairs || [];
-
-        await currentPairs.push(offerAnswerPair);
-        await callDoc.update({ offerAnswerPairs: currentPairs });
-        await signalDoc.set({ signal: 1 });
-
-        await callDoc.update({ loading: false });
-      }
-      if (signal === 2) {
-        await callDoc.update({ loading: true });
-
-        const answerDescription = new RTCSessionDescription((await callDoc.get()).data()?.offerAnswerPairs[lengthUsers - 1].answer);
-        await pc.setRemoteDescription(answerDescription);
-
-        await answerCandidatesCollection.onSnapshot(
-          async (snapshot) => {
-            await snapshot.docChanges().forEach(async (change) => {
-              if (change.type === "added") {
-                const candidateData = change.doc.data();
-                const candidate = new RTCIceCandidate(candidateData);
-                await pc
-                  .addIceCandidate(candidate)
-                  .then(() => {
-                    console.log("Ice candidate added successfully");
-                  })
-                  .catch((error) => {
-                    console.error("Error adding ice candidate:", error);
-                  });
-              }
-            });
-          },
-          (error) => {
-            console.error("Error getting candidate collection:", error);
-          }
-        );
-        await signalDoc.update({ signal: 3 });
-      } else if (signal === 4) {
-        await callDoc.update({
-          connectedUsers: (await callDoc.get()).data()?.connectedUsers + 1,
-        });
-        signalDoc = callDoc.collection("signal").doc(`signal${lengthUsers + 1}`);
-        signalDoc.onSnapshot(
-          async (doc) => {
-            if (doc.exists) {
-              const data = doc.data();
-              const signal = data?.signal;
-              await handleSignalChange(signal);
-            }
-          },
-          (error) => {
-            console.error("Error listening to document:", error);
-          }
-        );
-        let indexOfCurrentUsers: number[] = (await indexOfOtherConnectedCandidates.get()).data()?.indexOfCurrentUsers || [];
-        indexOfCurrentUsers.push(lengthUsers + 1);
-        await indexOfOtherConnectedCandidates.update({
-          indexOfCurrentUsers: indexOfCurrentUsers,
-        });
-        console.log(pc);
-        setPcs((prevPcs) => [...prevPcs, pc]);
-        await signalDoc.set({ signal: 0 });
-      }
-    };
-    signalDoc.onSnapshot(
-      async (doc) => {
-        if (doc.exists) {
-          const data = doc.data();
-          const signal = data?.signal;
-          await handleSignalChange(signal);
-        }
-      },
-      (error) => {
-        console.error("Error listening to document:", error);
-      }
-    );
-  };
-
-  const handleAnswerButtonClick = async () => {
-    setInCall(true);
-    let callId;
-    if (callInputRef.current) {
-      callId = callInputRef.current.value;
-      replace(`${pathname}?id=${callInputRef.current.value}`);
-    }
-    const callDocHost = firestore.collection("calls").doc(callId);
-    setCallId(callId);
-    const lengthUsers = (await callDocHost.get()).data()?.connectedUsers;
-    const signalDoc = callDocHost.collection("signal").doc(`signal${lengthUsers}`);
-
-    const currentConnectedUsers = (await callDocHost.get()).data()?.offerAnswerPairs;
-    const offerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
-    let indexOfOtherConnectedCandidates = callDocHost.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
-
-    const myIndex = lengthUsers + 1;
-    setMyIndex(lengthUsers);
-    const userListCollection = callDocHost.collection("currentUsers").doc("currentUsers");
-    userListCollection
-      .get()
-      .then((userListDoc) => {
-        if (userListDoc.exists) {
-          const userListData = userListDoc.data();
-          const userList = userListData?.userList || [];
-          const updatedUserList = [...userList, lengthUsers];
-
-          return userListCollection.update({ userList: updatedUserList });
-        }
-      })
-      .catch((error) => {
-        console.error("Error updating userList:", error);
-      });
-
-    let pc: RTCPeerConnection;
-
-    signalDoc.onSnapshot(
-      async (doc) => {
-        if (doc.exists) {
-          const data = doc.data();
-          const signal = data?.signal;
-          if (signal === 1) {
-            pc = new RTCPeerConnection(servers);
-
-            await localStream?.getTracks().forEach((track) => {
-              pc.addTrack(track, localStream as MediaStream);
-            });
-
-            let onTrackExecuted = false;
-
-            pc.ontrack = async (event) => {
-              if (!onTrackExecuted) {
-                onTrackExecuted = true;
-                const remoteStream = new MediaStream();
-                await event.streams[0].getTracks().forEach((track) => {
-                  remoteStream.addTrack(track);
-                });
-                console.log("Remote stream reflected");
-                await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
-              }
-            };
-
-            const answerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
-            if (pc)
-              pc.onicecandidate = async (event) => {
-                event.candidate && (await answerCandidatesCollection.add(event.candidate.toJSON()));
-              };
-
-            const offerDescription = new RTCSessionDescription((await callDocHost.get()).data()?.offerAnswerPairs[lengthUsers - 1].offer);
-            await pc.setRemoteDescription(offerDescription);
-
-            const answerDescription = await pc.createAnswer();
-            await pc.setLocalDescription(answerDescription);
-
-            const answer = {
-              sdp: answerDescription.sdp,
-              type: answerDescription.type,
-            };
-
-            currentConnectedUsers[lengthUsers - 1].answer = answer;
-
-            await callDocHost.update({ offerAnswerPairs: currentConnectedUsers });
-
-            await signalDoc.update({ signal: 2 });
-          }
-
-          if (signal === 3) {
-            await offerCandidatesCollection.get().then(async (snapshot) => {
-              await snapshot.docs.forEach(async (doc) => {
-                const candidateData = doc.data();
-                const candidate = new RTCIceCandidate(candidateData);
-                await pc
-                  .addIceCandidate(candidate)
-                  .then(() => {
-                    console.log("Ice candidate added successfully");
-                  })
-                  .catch((error) => {
-                    console.error("Error adding ice candidate:", error);
-                  });
-              });
-            });
-
-            await offerCandidatesCollection.onSnapshot(
-              async (snapshot) => {
-                await snapshot.docChanges().forEach(async (change) => {
-                  if (change.type === "added") {
-                    const candidateData = change.doc.data();
-                    const candidate = new RTCIceCandidate(candidateData);
-                    await pc
-                      .addIceCandidate(candidate)
-                      .then(() => {
-                        console.log("Ice candidate added successfully");
-                      })
-                      .catch((error) => {
-                        console.error("Error adding ice candidate:", error);
-                      });
-                  }
-                });
-              },
-              (error) => {
-                console.error("Error listening for offerCandidates changes:", error);
-              }
-            );
-            setPcs((prevPcs) => [...prevPcs, pc]);
-            await signalDoc.update({ signal: 4 });
-          }
-        }
-      },
-      (error) => {
-        console.error("Error listening to document:", error);
-      }
-    );
-
-    await callDocHost.update({ loading: false });
-
-    indexOfOtherConnectedCandidates.onSnapshot(async (doc) => {
-      if (doc.exists) {
-        //Check for any newly addded users
-        if (
-          doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] != myIndex &&
-          doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] &&
-          doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] > myIndex
-        ) {
-          const newAddedUser = doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1];
-          let signalDoc = callDocHost.collection("signal").doc(`signal${newAddedUser}${myIndex}`);
-          console.log(`${newAddedUser} added`);
-          console.log(`${myIndex} myIndex`);
-          await signalDoc.set({ userAdded: `${newAddedUser} added`, signal: 0 });
-          let offerAnswerPairs: firebase.firestore.DocumentReference<firebase.firestore.DocumentData>;
-          let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
-          let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
-          signalDoc.onSnapshot(async (doc) => {
-            if (doc.exists) {
-              const data = doc.data();
-              const signal = data?.signal;
-              if (signal === 0) {
-                pc = new RTCPeerConnection(servers);
-
-                await localStream?.getTracks().forEach((track) => {
-                  pc.addTrack(track, localStream as MediaStream);
-                });
-
-                let onTrackExecuted = false;
-
-                pc.ontrack = async (event) => {
-                  if (!onTrackExecuted) {
-                    onTrackExecuted = true;
-                    const remoteStream = new MediaStream();
-                    await event.streams[0].getTracks().forEach((track) => {
-                      remoteStream.addTrack(track);
-                    });
-                    console.log("Remote stream reflected");
-                    await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
-                  }
-                };
-
-                offerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${newAddedUser}${myIndex}`).collection("offerCandidates");
-                answerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${newAddedUser}${myIndex}`).collection("answerCandidates");
-                pc.onicecandidate = async (event) => {
-                  event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
-                };
-                offerAnswerPairs = callDocHost.collection("otherCandidates").doc(`offerAnswerPairs${newAddedUser}${myIndex}`);
-
-                pc.onicecandidate = async (event) => {
-                  event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
-                };
-
-                const offerDescription = await pc.createOffer();
-                await pc.setLocalDescription(offerDescription);
-
-                let offer = {
-                  sdp: offerDescription.sdp as string,
-                  type: offerDescription.type,
-                };
-
-                let offerAnswerPair: OfferAnswerPair = {
-                  offer: offer,
-                  answer: null,
-                };
-
-                const currentPairs: OfferAnswerPair[] = (await offerAnswerPairs.get()).data()?.offerAnswerPairs || [];
-
-                await currentPairs.push(offerAnswerPair);
-                console.log(currentPairs);
-                await offerAnswerPairs.set({ offerAnswerPairs: currentPairs });
-                await signalDoc.set({ signal: 1 });
-              } else if (signal == 2) {
-                const answerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].answer);
-                console.log("Data on receiver is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].answer);
-                await pc.setRemoteDescription(answerDescription);
-
-                await answerCandidatesCollection.onSnapshot(
-                  async (snapshot) => {
-                    await snapshot.docChanges().forEach(async (change) => {
-                      if (change.type === "added") {
-                        const candidateData = change.doc.data();
-                        const candidate = new RTCIceCandidate(candidateData);
-                        await pc
-                          .addIceCandidate(candidate)
-                          .then(() => {
-                            console.log("Ice candidate added successfully");
-                          })
-                          .catch((error) => {
-                            console.error("Error adding ice candidate:", error);
-                          });
-                      }
-                    });
-                  },
-                  (error) => {
-                    console.error("Error getting candidate collection:", error);
-                  }
-                );
-                setPcs((prevPcs) => [...prevPcs, pc]);
-                await signalDoc.update({ signal: 3 });
-              }
-            }
-          });
-        }
-      } else {
-        console.log("No such document!");
-      }
-    });
-    const indexUsers = (await indexOfOtherConnectedCandidates.get()).data()?.indexOfCurrentUsers;
-    await indexUsers.forEach(async (existingCaller: number) => {
-      console.log(`User Index: ${existingCaller}`);
-      let signalDoc = callDocHost.collection("signal").doc(`signal${myIndex}${existingCaller}`);
-      let offerAnswerPairs: firebase.firestore.DocumentReference<firebase.firestore.DocumentData>;
-      let offerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${myIndex}${existingCaller}`).collection("offerCandidates");
-      let pc: RTCPeerConnection;
-
-      signalDoc.onSnapshot(async (doc) => {
-        if (doc.exists) {
-          const data = doc.data();
-          const signal = data?.signal;
-
-          if (signal === 1) {
-            pc = new RTCPeerConnection(servers);
-            offerAnswerPairs = callDocHost.collection("otherCandidates").doc(`offerAnswerPairs${myIndex}${existingCaller}`);
-            console.log(`pair is ${myIndex}${existingCaller}`);
-
-            await localStream?.getTracks().forEach((track) => {
-              pc.addTrack(track, localStream as MediaStream);
-            });
-
-            let onTrackExecuted = false;
-
-            pc.ontrack = async (event) => {
-              if (!onTrackExecuted) {
-                onTrackExecuted = true;
-                const remoteStream = new MediaStream();
-                await event.streams[0].getTracks().forEach((track) => {
-                  remoteStream.addTrack(track);
-                });
-                console.log("Remote stream reflected");
-                await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
-              }
-            };
-
-            const answerCandidatesCollection = callDocHost
-              .collection("otherCandidates")
-              .doc(`candidate${myIndex}${existingCaller}`)
-              .collection("answerCandidates");
-            if (pc)
-              pc.onicecandidate = async (event) => {
-                event.candidate && (await answerCandidatesCollection.add(event.candidate.toJSON()));
-              };
-
-            const offerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].offer);
-            console.log("offer is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs);
-            await pc.setRemoteDescription(offerDescription);
-
-            const answerDescription = await pc.createAnswer();
-            await pc.setLocalDescription(answerDescription);
-
-            const answer = {
-              sdp: answerDescription.sdp,
-              type: answerDescription.type,
-            };
-
-            const currentPair = (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0];
-            console.log("Current pair is ", currentPair);
-            currentPair.answer = answer;
-
-            await offerAnswerPairs.update({ offerAnswerPairs: [currentPair] });
-
-            await signalDoc.update({ signal: 2 });
-          } else if (signal === 3) {
-            console.log("The remote description after setting it is ", pc);
-            await offerCandidatesCollection.get().then(async (snapshot) => {
-              await snapshot.docs.forEach(async (doc) => {
-                const candidateData = doc.data();
-                const candidate = new RTCIceCandidate(candidateData);
-                await pc
-                  .addIceCandidate(candidate)
-                  .then(() => {
-                    console.log("Ice candidate added successfully");
-                  })
-                  .catch((error) => {
-                    console.error("Error adding ice candidate:", error);
-                  });
-              });
-            });
-
-            await offerCandidatesCollection.onSnapshot(
-              async (snapshot) => {
-                await snapshot.docChanges().forEach(async (change) => {
-                  if (change.type === "added") {
-                    const candidateData = change.doc.data();
-                    const candidate = new RTCIceCandidate(candidateData);
-                    await pc
-                      .addIceCandidate(candidate)
-                      .then(() => {
-                        console.log("Ice candidate added successfully");
-                      })
-                      .catch((error) => {
-                        console.error("Error adding ice candidate:", error);
-                      });
-                  }
-                });
-              },
-              (error) => {
-                console.error("Error listening for offerCandidates changes:", error);
-              }
-            );
-            setPcs((prevPcs) => [...prevPcs, pc]);
-            await signalDoc.update({ signal: 4 });
-          }
-        }
-      });
-    });
-
-    if (answerButtonRef.current) answerButtonRef.current.disabled = true;
-  };
 
   useEffect(() => {
-    const serverList = {
+    const servers = {
       iceServers: [
         {
           urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
@@ -584,10 +62,513 @@ const PageContent = () => {
       ],
       iceCandidatePoolSize: 10,
     };
-    servers = serverList;
+
+    const startWebcam = async () => {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        setStream(localStream);
+        setAccessGiven(true);
+        if (webcamVideoRef.current && localStream) {
+          webcamVideoRef.current.srcObject = localStream;
+        }
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+      }
+
+      if (callButtonRef.current) callButtonRef.current.disabled = false;
+      if (answerButtonRef.current) answerButtonRef.current.disabled = false;
+      if (webcamButtonRef.current) webcamButtonRef.current.disabled = true;
+    };
+
     if (webcamButtonRef.current) {
       webcamButtonRef.current.onclick = startWebcam;
     }
+
+    const handleCallButtonClick = async () => {
+      setInCall(true);
+      const callDoc = firestore.collection("calls").doc();
+      let signalDoc = callDoc.collection("signal").doc(`signal1`);
+      let indexOfOtherConnectedCandidates = callDoc.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
+      await indexOfOtherConnectedCandidates.set({ indexOfCurrentUsers: [] });
+      if (callInputRef.current) {
+        callInputRef.current.value = callDoc.id;
+      }
+      setCallId(callDoc.id);
+      replace(`${pathname}?id=${callDoc.id}`);
+      await callDoc.set({ loading: false });
+      await callDoc.set({ connectedUsers: 1 });
+
+      setMyIndex(0);
+
+      let lengthUsers: number;
+      let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+      let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+
+      await signalDoc.set({ signal: 0 });
+      let pc: RTCPeerConnection;
+      const handleSignalChange = async (signal: number) => {
+        if (signal === 0) {
+          pc = await new RTCPeerConnection(servers);
+
+          await localStream?.getTracks().forEach((track) => {
+            pc.addTrack(track, localStream as MediaStream);
+          });
+
+          let onTrackExecuted = false;
+
+          pc.ontrack = async (event) => {
+            if (!onTrackExecuted) {
+              onTrackExecuted = true;
+              const remoteStream = new MediaStream();
+              await event.streams[0].getTracks().forEach((track) => {
+                remoteStream.addTrack(track);
+              });
+              console.log("Remote stream reflected");
+              await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
+            }
+          };
+
+          lengthUsers = (await callDoc.get()).data()?.connectedUsers;
+          await callDoc.update({ loading: true });
+          offerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
+          answerCandidatesCollection = callDoc.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
+          pc.onicecandidate = async (event) => {
+            event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
+          };
+
+          const offerDescription = await pc.createOffer();
+          await pc.setLocalDescription(offerDescription);
+
+          let offer = {
+            sdp: offerDescription.sdp as string,
+            type: offerDescription.type,
+          };
+
+          let offerAnswerPair: OfferAnswerPair = {
+            offer: offer,
+            answer: null,
+          };
+
+          const currentPairs: OfferAnswerPair[] = (await callDoc.get()).data()?.offerAnswerPairs || [];
+
+          await currentPairs.push(offerAnswerPair);
+          await callDoc.update({ offerAnswerPairs: currentPairs });
+          await signalDoc.set({ signal: 1 });
+
+          await callDoc.update({ loading: false });
+        }
+        if (signal === 2) {
+          await callDoc.update({ loading: true });
+
+          const answerDescription = new RTCSessionDescription((await callDoc.get()).data()?.offerAnswerPairs[lengthUsers - 1].answer);
+          await pc.setRemoteDescription(answerDescription);
+
+          await answerCandidatesCollection.onSnapshot(
+            async (snapshot) => {
+              await snapshot.docChanges().forEach(async (change) => {
+                if (change.type === "added") {
+                  const candidateData = change.doc.data();
+                  const candidate = new RTCIceCandidate(candidateData);
+                  await pc
+                    .addIceCandidate(candidate)
+                    .then(() => {
+                      console.log("Ice candidate added successfully");
+                    })
+                    .catch((error) => {
+                      console.error("Error adding ice candidate:", error);
+                    });
+                }
+              });
+            },
+            (error) => {
+              console.error("Error getting candidate collection:", error);
+            }
+          );
+          await signalDoc.update({ signal: 3 });
+        } else if (signal === 4) {
+          await callDoc.update({
+            connectedUsers: (await callDoc.get()).data()?.connectedUsers + 1,
+          });
+          signalDoc = callDoc.collection("signal").doc(`signal${lengthUsers + 1}`);
+          signalDoc.onSnapshot(
+            async (doc) => {
+              if (doc.exists) {
+                const data = doc.data();
+                const signal = data?.signal;
+                await handleSignalChange(signal);
+              }
+            },
+            (error) => {
+              console.error("Error listening to document:", error);
+            }
+          );
+          let indexOfCurrentUsers: number[] = (await indexOfOtherConnectedCandidates.get()).data()?.indexOfCurrentUsers || [];
+          indexOfCurrentUsers.push(lengthUsers + 1);
+          await indexOfOtherConnectedCandidates.update({
+            indexOfCurrentUsers: indexOfCurrentUsers,
+          });
+          console.log(pc);
+          setPcs((prevPcs) => [...prevPcs, pc]);
+          await signalDoc.set({ signal: 0 });
+        }
+      };
+      signalDoc.onSnapshot(
+        async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const signal = data?.signal;
+            await handleSignalChange(signal);
+          }
+        },
+        (error) => {
+          console.error("Error listening to document:", error);
+        }
+      );
+    };
+
+    const handleAnswerButtonClick = async () => {
+      setInCall(true);
+      let callId;
+      if (callInputRef.current) {
+        callId = callInputRef.current.value;
+        replace(`${pathname}?id=${callInputRef.current.value}`);
+      }
+      const callDocHost = firestore.collection("calls").doc(callId);
+      setCallId(callId);
+      const lengthUsers = (await callDocHost.get()).data()?.connectedUsers;
+      const signalDoc = callDocHost.collection("signal").doc(`signal${lengthUsers}`);
+
+      const currentConnectedUsers = (await callDocHost.get()).data()?.offerAnswerPairs;
+      const offerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("offerCandidates");
+      let indexOfOtherConnectedCandidates = callDocHost.collection("otherCandidates").doc(`indexOfConnectedCandidates`);
+
+      const myIndex = lengthUsers + 1;
+      setMyIndex(lengthUsers);
+      let pc: RTCPeerConnection;
+
+      signalDoc.onSnapshot(
+        async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const signal = data?.signal;
+            if (signal === 1) {
+              pc = new RTCPeerConnection(servers);
+
+              await localStream?.getTracks().forEach((track) => {
+                pc.addTrack(track, localStream as MediaStream);
+              });
+
+              let onTrackExecuted = false;
+
+              pc.ontrack = async (event) => {
+                if (!onTrackExecuted) {
+                  onTrackExecuted = true;
+                  const remoteStream = new MediaStream();
+                  await event.streams[0].getTracks().forEach((track) => {
+                    remoteStream.addTrack(track);
+                  });
+                  console.log("Remote stream reflected");
+                  await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
+                }
+              };
+
+              const answerCandidatesCollection = callDocHost.collection("candidates").doc(`candidate${lengthUsers}`).collection("answerCandidates");
+              if (pc)
+                pc.onicecandidate = async (event) => {
+                  event.candidate && (await answerCandidatesCollection.add(event.candidate.toJSON()));
+                };
+
+              const offerDescription = new RTCSessionDescription((await callDocHost.get()).data()?.offerAnswerPairs[lengthUsers - 1].offer);
+              await pc.setRemoteDescription(offerDescription);
+
+              const answerDescription = await pc.createAnswer();
+              await pc.setLocalDescription(answerDescription);
+
+              const answer = {
+                sdp: answerDescription.sdp,
+                type: answerDescription.type,
+              };
+
+              currentConnectedUsers[lengthUsers - 1].answer = answer;
+
+              await callDocHost.update({ offerAnswerPairs: currentConnectedUsers });
+
+              await signalDoc.update({ signal: 2 });
+            }
+
+            if (signal === 3) {
+              await offerCandidatesCollection.get().then(async (snapshot) => {
+                await snapshot.docs.forEach(async (doc) => {
+                  const candidateData = doc.data();
+                  const candidate = new RTCIceCandidate(candidateData);
+                  await pc
+                    .addIceCandidate(candidate)
+                    .then(() => {
+                      console.log("Ice candidate added successfully");
+                    })
+                    .catch((error) => {
+                      console.error("Error adding ice candidate:", error);
+                    });
+                });
+              });
+
+              await offerCandidatesCollection.onSnapshot(
+                async (snapshot) => {
+                  await snapshot.docChanges().forEach(async (change) => {
+                    if (change.type === "added") {
+                      const candidateData = change.doc.data();
+                      const candidate = new RTCIceCandidate(candidateData);
+                      await pc
+                        .addIceCandidate(candidate)
+                        .then(() => {
+                          console.log("Ice candidate added successfully");
+                        })
+                        .catch((error) => {
+                          console.error("Error adding ice candidate:", error);
+                        });
+                    }
+                  });
+                },
+                (error) => {
+                  console.error("Error listening for offerCandidates changes:", error);
+                }
+              );
+              setPcs((prevPcs) => [...prevPcs, pc]);
+              await signalDoc.update({ signal: 4 });
+            }
+          }
+        },
+        (error) => {
+          console.error("Error listening to document:", error);
+        }
+      );
+
+      await callDocHost.update({ loading: false });
+
+      indexOfOtherConnectedCandidates.onSnapshot(async (doc) => {
+        if (doc.exists) {
+          //Check for any newly addded users
+          if (
+            doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] != myIndex &&
+            doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] &&
+            doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1] > myIndex
+          ) {
+            const newAddedUser = doc.data()?.indexOfCurrentUsers[doc.data()?.indexOfCurrentUsers.length - 1];
+            let signalDoc = callDocHost.collection("signal").doc(`signal${newAddedUser}${myIndex}`);
+            console.log(`${newAddedUser} added`);
+            console.log(`${myIndex} myIndex`);
+            await signalDoc.set({ userAdded: `${newAddedUser} added`, signal: 0 });
+            let offerAnswerPairs: firebase.firestore.DocumentReference<firebase.firestore.DocumentData>;
+            let offerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+            let answerCandidatesCollection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
+            signalDoc.onSnapshot(async (doc) => {
+              if (doc.exists) {
+                const data = doc.data();
+                const signal = data?.signal;
+                if (signal === 0) {
+                  pc = new RTCPeerConnection(servers);
+
+                  await localStream?.getTracks().forEach((track) => {
+                    pc.addTrack(track, localStream as MediaStream);
+                  });
+
+                  let onTrackExecuted = false;
+
+                  pc.ontrack = async (event) => {
+                    if (!onTrackExecuted) {
+                      onTrackExecuted = true;
+                      const remoteStream = new MediaStream();
+                      await event.streams[0].getTracks().forEach((track) => {
+                        remoteStream.addTrack(track);
+                      });
+                      console.log("Remote stream reflected");
+                      await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
+                    }
+                  };
+
+                  offerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${newAddedUser}${myIndex}`).collection("offerCandidates");
+                  answerCandidatesCollection = callDocHost
+                    .collection("otherCandidates")
+                    .doc(`candidate${newAddedUser}${myIndex}`)
+                    .collection("answerCandidates");
+                  pc.onicecandidate = async (event) => {
+                    event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
+                  };
+                  offerAnswerPairs = callDocHost.collection("otherCandidates").doc(`offerAnswerPairs${newAddedUser}${myIndex}`);
+
+                  pc.onicecandidate = async (event) => {
+                    event.candidate && (await offerCandidatesCollection.add(event.candidate.toJSON()));
+                  };
+
+                  const offerDescription = await pc.createOffer();
+                  await pc.setLocalDescription(offerDescription);
+
+                  let offer = {
+                    sdp: offerDescription.sdp as string,
+                    type: offerDescription.type,
+                  };
+
+                  let offerAnswerPair: OfferAnswerPair = {
+                    offer: offer,
+                    answer: null,
+                  };
+
+                  const currentPairs: OfferAnswerPair[] = (await offerAnswerPairs.get()).data()?.offerAnswerPairs || [];
+
+                  await currentPairs.push(offerAnswerPair);
+                  console.log(currentPairs);
+                  await offerAnswerPairs.set({ offerAnswerPairs: currentPairs });
+                  await signalDoc.set({ signal: 1 });
+                } else if (signal == 2) {
+                  const answerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].answer);
+                  console.log("Data on receiver is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].answer);
+                  await pc.setRemoteDescription(answerDescription);
+
+                  await answerCandidatesCollection.onSnapshot(
+                    async (snapshot) => {
+                      await snapshot.docChanges().forEach(async (change) => {
+                        if (change.type === "added") {
+                          const candidateData = change.doc.data();
+                          const candidate = new RTCIceCandidate(candidateData);
+                          await pc
+                            .addIceCandidate(candidate)
+                            .then(() => {
+                              console.log("Ice candidate added successfully");
+                            })
+                            .catch((error) => {
+                              console.error("Error adding ice candidate:", error);
+                            });
+                        }
+                      });
+                    },
+                    (error) => {
+                      console.error("Error getting candidate collection:", error);
+                    }
+                  );
+                  setPcs((prevPcs) => [...prevPcs, pc]);
+                  await signalDoc.update({ signal: 3 });
+                }
+              }
+            });
+          }
+        } else {
+          console.log("No such document!");
+        }
+      });
+      const indexUsers = (await indexOfOtherConnectedCandidates.get()).data()?.indexOfCurrentUsers;
+      await indexUsers.forEach(async (existingCaller: number) => {
+        console.log(`User Index: ${existingCaller}`);
+        let signalDoc = callDocHost.collection("signal").doc(`signal${myIndex}${existingCaller}`);
+        let offerAnswerPairs: firebase.firestore.DocumentReference<firebase.firestore.DocumentData>;
+        let offerCandidatesCollection = callDocHost.collection("otherCandidates").doc(`candidate${myIndex}${existingCaller}`).collection("offerCandidates");
+        let pc: RTCPeerConnection;
+
+        signalDoc.onSnapshot(async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const signal = data?.signal;
+
+            if (signal === 1) {
+              pc = new RTCPeerConnection(servers);
+              offerAnswerPairs = callDocHost.collection("otherCandidates").doc(`offerAnswerPairs${myIndex}${existingCaller}`);
+              console.log(`pair is ${myIndex}${existingCaller}`);
+
+              await localStream?.getTracks().forEach((track) => {
+                pc.addTrack(track, localStream as MediaStream);
+              });
+
+              let onTrackExecuted = false;
+
+              pc.ontrack = async (event) => {
+                if (!onTrackExecuted) {
+                  onTrackExecuted = true;
+                  const remoteStream = new MediaStream();
+                  await event.streams[0].getTracks().forEach((track) => {
+                    remoteStream.addTrack(track);
+                  });
+                  console.log("Remote stream reflected");
+                  await setRemoteStreams((prevStreams) => [...prevStreams, remoteStream]);
+                }
+              };
+
+              const answerCandidatesCollection = callDocHost
+                .collection("otherCandidates")
+                .doc(`candidate${myIndex}${existingCaller}`)
+                .collection("answerCandidates");
+              if (pc)
+                pc.onicecandidate = async (event) => {
+                  event.candidate && (await answerCandidatesCollection.add(event.candidate.toJSON()));
+                };
+
+              const offerDescription = new RTCSessionDescription((await offerAnswerPairs.get()).data()?.offerAnswerPairs[0].offer);
+              console.log("offer is ", (await offerAnswerPairs.get()).data()?.offerAnswerPairs);
+              await pc.setRemoteDescription(offerDescription);
+
+              const answerDescription = await pc.createAnswer();
+              await pc.setLocalDescription(answerDescription);
+
+              const answer = {
+                sdp: answerDescription.sdp,
+                type: answerDescription.type,
+              };
+
+              const currentPair = (await offerAnswerPairs.get()).data()?.offerAnswerPairs[0];
+              console.log("Current pair is ", currentPair);
+              currentPair.answer = answer;
+
+              await offerAnswerPairs.update({ offerAnswerPairs: [currentPair] });
+
+              await signalDoc.update({ signal: 2 });
+            } else if (signal === 3) {
+              console.log("The remote description after setting it is ", pc);
+              await offerCandidatesCollection.get().then(async (snapshot) => {
+                await snapshot.docs.forEach(async (doc) => {
+                  const candidateData = doc.data();
+                  const candidate = new RTCIceCandidate(candidateData);
+                  await pc
+                    .addIceCandidate(candidate)
+                    .then(() => {
+                      console.log("Ice candidate added successfully");
+                    })
+                    .catch((error) => {
+                      console.error("Error adding ice candidate:", error);
+                    });
+                });
+              });
+
+              await offerCandidatesCollection.onSnapshot(
+                async (snapshot) => {
+                  await snapshot.docChanges().forEach(async (change) => {
+                    if (change.type === "added") {
+                      const candidateData = change.doc.data();
+                      const candidate = new RTCIceCandidate(candidateData);
+                      await pc
+                        .addIceCandidate(candidate)
+                        .then(() => {
+                          console.log("Ice candidate added successfully");
+                        })
+                        .catch((error) => {
+                          console.error("Error adding ice candidate:", error);
+                        });
+                    }
+                  });
+                },
+                (error) => {
+                  console.error("Error listening for offerCandidates changes:", error);
+                }
+              );
+              setPcs((prevPcs) => [...prevPcs, pc]);
+              await signalDoc.update({ signal: 4 });
+            }
+          }
+        });
+      });
+
+      if (answerButtonRef.current) answerButtonRef.current.disabled = true;
+    };
 
     if (callButtonRef.current) {
       callButtonRef.current.onclick = handleCallButtonClick;
@@ -609,6 +590,12 @@ const PageContent = () => {
     setRemoteStreams([]);
     setRemoteVideoRefs([]);
     setPcs([]);
+
+    // setRemoteVideoRefs(prevRefs => {
+    //   const newRefs = [...prevRefs];
+    //   newRefs[2] = null;
+    //   return newRefs;
+    // });
   };
 
   useEffect(() => {
@@ -700,27 +687,13 @@ const PageContent = () => {
   }, [remoteVideoRefs, remoteStreams]);
 
   useEffect(() => {
-    if (!hasRun.current) {
-      hasRun.current = true;
-  
-      const reconnect = () => {
-        console.log("Connected");
-        setConnected(true);
-        startWebcam();
-        handleAnswerButtonClick();
-      };
-  
-      const id = searchParams.get("id");
-      if (id) {
-        if (callInputRef.current) {
-          callInputRef.current.value = id;
-        }
-        if (connected === false) {
-          reconnect();
-        }
+    const id = searchParams.get("id");
+    if (id) {
+      if (callInputRef.current) {
+        callInputRef.current.value = id;
       }
-      setIsClient(true);
     }
+    setIsClient(true);
   }, []);
 
   const copyLink = () => {
@@ -756,7 +729,7 @@ const PageContent = () => {
       }
     }
   };
-
+  
   if (!user) {
     return <Login />;
   }

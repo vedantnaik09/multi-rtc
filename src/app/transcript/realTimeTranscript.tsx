@@ -32,6 +32,7 @@ const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: 
   };
 
   const run = async () => {
+    if (role) {
       toast.loading("Starting... pls wait...");
       let temp = currentPauseTime.current;
       currentPauseTime.current = temp + 1;
@@ -93,8 +94,7 @@ const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: 
                 finalTexts[`${currentPauseTime.current}-${res.audio_start}`] = `\n${res.text}`;
                 console.log("TEXT AFTER LONG PAUSE IS : \n", res.text, "\n SEDNGING TO CHATGPT");
                 updateTranscriptInDatabase(res.text);
-                // sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId!, res.text, role, "1");
-                sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId!, res.text, "1");
+                sendTranscriptTo_Chatgpt4O_AndPushInDatabase(callId!, res.text, role, "1");
                 pauseDetected.current = false;
               } else {
                 finalTexts[`${currentPauseTime.current}-${res.audio_start}`] = res.text;
@@ -263,6 +263,9 @@ const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: 
           console.error(error);
         }
       }
+    }else{
+      toast.error("Please enter a role")
+    }
   };
 
   const stop = () => {
@@ -288,13 +291,13 @@ const RealTimeTranscript: React.FC<{ callId: string | undefined; remoteStreams: 
 
   return (
     <div>
-      {/* <div className="mb-8">
+      <div className="mb-8">
         <input
           placeholder="Role"
           onChange={(e) => setRole(e.target.value)}
           className="p-2 placeholder:text-gray-300 border text-center border-gray-300 rounded-md w-[300px] max-w-full"
         />
-      </div> */}
+      </div>
       <div className="md:flex-row flex-col flex gap-2 mx-auto justify-center items-center">
         <button onClick={run} disabled={!callId} className="disabled:bg-green-200 bg-green-500 disabled:cursor-not-allowed p-5 mx-5">
           Start Recording
