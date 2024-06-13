@@ -41,6 +41,7 @@ export async function sendTranscriptTo_Chatgpt4O_AndPushInDatabase(roomId: strin
       content: value,
       roomId,
       yoe,
+      role
     });
     console.log(response);
     const data = response.data;

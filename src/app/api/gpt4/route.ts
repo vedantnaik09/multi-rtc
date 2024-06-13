@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
 {"itemFound": true, "type": "question"/"scenario"/"coding challenge", "question": "the item presented by the interviewer", "experience":"${YOE} years of experience"}
 
-You should generate an answer in a casual, conversational tone appropriate for an interviewee with ${YOE} years of experience. Respond with a JSON structure as follows:
+You should generate an answer in a casual, conversational tone appropriate for an interviewee with ${YOE} years of experience. Keep the answers a bit detailed in nature but don't exceed it more than 300 words, make sure the answer is in first person and dont add any new lines in the answer, give the entire answer in a single paragraph. Respond with a JSON structure as follows:
 {"itemFound": true, "type":${prompt.type}, "question":${prompt.question}, "experience":${prompt.yoe},"answer": "your casual, conversational response suitable for someone with ${YOE} years of experience should come here"}
 itemFound should be always true, if in the given prompt it is true.
 Here is the prompt:
